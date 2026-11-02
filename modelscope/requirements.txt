@@ -1,0 +1,10 @@
+# ModelScope DSW images usually ship torch + diffusers already.
+# These are the extra packages this project needs.
+llama-cpp-python>=0.3.0
+diffusers
+transformers
+optimum-intel
+openvino
+safetensors
+numpy
+pillow

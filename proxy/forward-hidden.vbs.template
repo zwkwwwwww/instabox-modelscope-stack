@@ -1,0 +1,3 @@
+Set sh = CreateObject("WScript.Shell")
+cmd = "cmd.exe /c """"__EXE__"" port-forward __BOX__ __PORT__:__PORT__ >> ""__LOG__"" 2>&1"""
+sh.Run cmd, 0, False
