@@ -13,7 +13,7 @@ $lock = Join-Path $dir "start.lock"
 
 function Test-ProxyHealth {
     if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) { return $true }
-    $code = & curl.exe -s -o NUL -w "%{http_code}" --max-time 20 -x $proxy "https://www.google.com/generate_204" 2>$null
+    $code = & curl.exe -s -o NUL -w "%{http_code}" --max-time 25 -x $proxy "https://www.google.com/generate_204" 2>$null
     return ([string]$code -eq "204")
 }
 
@@ -110,14 +110,19 @@ for ($attempt = 1; $attempt -le 2; $attempt++) {
         }
     }
     if (Wait-Port -Seconds 30) {
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 5
         if (Test-ProxyHealth) {
             Write-Host "[OK] proxy started on 127.0.0.1:$ProxyPort"
             exit 0
         }
-        Start-Sleep -Seconds 10
+        Start-Sleep -Seconds 15
         if (Test-ProxyHealth) {
             Write-Host "[OK] proxy started on 127.0.0.1:$ProxyPort (after warm-up)"
+            exit 0
+        }
+        Start-Sleep -Seconds 15
+        if (Test-ProxyHealth) {
+            Write-Host "[OK] proxy started on 127.0.0.1:$ProxyPort (after second warm-up)"
             exit 0
         }
         Write-Host "[WARN] attempt ${attempt}: tunnel up but not passing traffic"
