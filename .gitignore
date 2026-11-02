@@ -1,0 +1,24 @@
+# secrets / local config
+proxy/config.ps1
+proxy/config.json
+**/tunnel-token
+**/auth
+**/apikey
+.env
+
+# runtime
+*.log
+forward.log*
+start.lock
+forward-hidden.vbs
+__pycache__/
+*.pyc
+
+# large assets
+wheels/
+gguf/
+img/
+models/
+*.gguf
+*.safetensors
+*.bin

@@ -1,0 +1,15 @@
+[Unit]
+Description=msagent job server (long-poll queue for remote workers)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Environment=MSAGENT_DIR=/data/msagent
+Environment=MSAGENT_PORT=8899
+ExecStart=/usr/bin/python3 /data/msagent/server.py
+Restart=always
+RestartSec=3
+WorkingDirectory=/data/msagent
+
+[Install]
+WantedBy=multi-user.target

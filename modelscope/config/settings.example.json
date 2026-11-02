@@ -1,0 +1,6 @@
+{
+  "think_level": "high",
+  "max_queue": 8,
+  "max_tokens_default": 4096,
+  "ctx_size": 16384
+}
