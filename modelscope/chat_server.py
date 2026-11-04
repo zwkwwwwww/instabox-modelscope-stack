@@ -1037,8 +1037,12 @@ function restoreHist(){for(const m of history){
    el.appendChild(n);
   }
  }
-}}
-function addMsg(kind,text){const d=document.createElement('div');d.className='msg '+kind;d.textContent=text;$('log').appendChild(d);$('log').scrollTop=$('log').scrollHeight;return d;}
+}
+scrollBottom();
+}
+function isAtBottom(){var el=$('log');if(!el)return true;return el.scrollHeight-el.scrollTop-el.clientHeight<48;}
+function scrollBottom(){var el=$('log');if(!el)return;var old=el.style.scrollBehavior;el.style.scrollBehavior='auto';el.scrollTop=el.scrollHeight;el.style.scrollBehavior=old;}
+function addMsg(kind,text){var stick=isAtBottom();const d=document.createElement('div');d.className='msg '+kind;d.textContent=text;$('log').appendChild(d);if(stick)scrollBottom();return d;}
 async function jget(u){const r=await fetch(u,{cache:'no-store'});return r.json();}
 async function jpost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});}
 function setStatus(t){$('status').textContent=t;}
@@ -1799,10 +1803,11 @@ async function send(){
    while((i=buf.indexOf('\n\n'))>=0){
     const line=buf.slice(0,i).trim();buf=buf.slice(i+2);
     if(line.startsWith('data: ')){const data=line.slice(6);if(data==='[DONE]')continue;
-     try{const j=JSON.parse(data);if(j.meta){if(currentId===convId)setCtxMeta(j.meta);continue;}if(j.delta){acc+=j.delta;render(el,acc);$('log').scrollTop=$('log').scrollHeight;var ps=pendingStreams[aid];if(ps){ps.acc=acc;if(Date.now()-ps.last>700){ps.last=Date.now();updateAssistant(convId,aid,acc,{pending:true});}}}}catch(e){}}
+     try{const j=JSON.parse(data);if(j.meta){if(currentId===convId)setCtxMeta(j.meta);continue;}if(j.delta){acc+=j.delta;var stick=isAtBottom();render(el,acc);if(stick)scrollBottom();var ps=pendingStreams[aid];if(ps){ps.acc=acc;if(Date.now()-ps.last>700){ps.last=Date.now();updateAssistant(convId,aid,acc,{pending:true});}}}}catch(e){}}
    }
   }
   if(currentId===convId)renderCtx(acc.length);
+  var stickFinal=isAtBottom();
   renderFinal(el,acc);
   let clean=acc;
   const ct=acc.indexOf('</think>');
@@ -1816,6 +1821,7 @@ async function send(){
   updateAssistant(convId,aid,finalText,{pending:false,ui:uiBlock,uiInline:[]});
   delete pendingStreams[aid];
   if(currentId===convId&&!el.isConnected){const e=addMsg('ai','');renderFinal(e,finalText,uiBlock,uiInline);}
+  if(stickFinal)scrollBottom();
  }catch(e){
   var stopped=(e&&(e.name==='AbortError'||String(e.message||'').indexOf('已停止')>=0));
   var ps2=pendingStreams[aid];
