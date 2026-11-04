@@ -1503,22 +1503,62 @@ function normalizeLatex(s){
  return String(s||'').split(bs+'[').join('$$').split(bs+']').join('$$').split(bs+'(').join('$').split(bs+')').join('$');
 }
 function escapeForMd(s){return s.split('&').join('&amp;').split('<').join('&lt;');}
+function safeCssValue(v){
+ var x=String(v||"").trim();
+ if(!x)return "";
+ var low=x.toLowerCase();
+ if(low.indexOf("javascript:")>=0||low.indexOf("expression")>=0||low.indexOf("behavior")>=0||low.indexOf("@import")>=0)return "";
+ if(low.indexOf("url(")>=0&&low.indexOf("url(#")<0)return "";
+ return x.replace(/!important/g,"").trim();
+}
+function safeDecls(css){
+ var props={fill:1,stroke:1,"stroke-width":1,"stroke-opacity":1,"fill-opacity":1,opacity:1,color:1,"font-size":1,"font-family":1,"font-weight":1,"text-anchor":1,"dominant-baseline":1,"stroke-linecap":1,"stroke-linejoin":1,"stroke-dasharray":1,"stop-color":1,"stop-opacity":1};
+ var out=[],parts=String(css||"").split(";");
+ for(var i=0;i<parts.length;i++){
+  var d=parts[i],p=d.indexOf(":");
+  if(p<0)continue;
+  var k=d.slice(0,p).trim().toLowerCase(),v=safeCssValue(d.slice(p+1));
+  if(!props[k]||!v)continue;
+  out.push(k+":"+v);
+ }
+ return out.join(";");
+}
+function safeStyleSheet(css){
+ var out=[],rules=String(css||"").split("}");
+ for(var ri=0;ri<rules.length;ri++){
+  var rule=rules[ri],p=rule.indexOf("{");
+  if(p<0)continue;
+  var sel=rule.slice(0,p).trim(),decl=safeDecls(rule.slice(p+1));
+  if(!sel||!decl||sel.indexOf("@")>=0||sel.toLowerCase().indexOf("javascript")>=0)continue;
+  var sels=sel.split(","),scoped=[];
+  for(var si=0;si<sels.length;si++){
+   var one=sels[si].trim();
+   if(!one)continue;
+   scoped.push(".svg-wrap "+one);
+  }
+  if(scoped.length)out.push(scoped.join(",")+"{"+decl+"}");
+ }
+ return out.join("");
+}
 function sanitizeSvg(text){
  var doc;
  try{doc=new DOMParser().parseFromString(String(text||""),"image/svg+xml");}catch(e){return null;}
  if(!doc||doc.getElementsByTagName("parsererror").length)return null;
  var root=doc.documentElement;
  if(!root||root.localName!=="svg")return null;
- var allowed={svg:1,g:1,path:1,circle:1,ellipse:1,rect:1,line:1,polyline:1,polygon:1,text:1,tspan:1,defs:1,linearGradient:1,radialGradient:1,stop:1,clipPath:1,mask:1,use:1,title:1,desc:1,marker:1,pattern:1};
- var attrs={viewbox:1,width:1,height:1,x:1,y:1,x1:1,y1:1,x2:1,y2:1,cx:1,cy:1,r:1,rx:1,ry:1,d:1,points:1,fill:1,"fill-opacity":1,stroke:1,"stroke-width":1,"stroke-opacity":1,"stroke-linecap":1,"stroke-linejoin":1,"stroke-dasharray":1,transform:1,"font-size":1,"font-family":1,"font-weight":1,"text-anchor":1,"dominant-baseline":1,opacity:1,id:1,dx:1,dy:1,offset:1,"stop-color":1,"stop-opacity":1,"clip-path":1,mask:1};
+ var allowed={svg:1,g:1,path:1,circle:1,ellipse:1,rect:1,line:1,polyline:1,polygon:1,text:1,tspan:1,defs:1,linearGradient:1,radialGradient:1,stop:1,clipPath:1,mask:1,use:1,title:1,desc:1,marker:1,pattern:1,style:1};
+ var attrs={viewbox:1,width:1,height:1,x:1,y:1,x1:1,y1:1,x2:1,y2:1,cx:1,cy:1,r:1,rx:1,ry:1,d:1,points:1,fill:1,"fill-opacity":1,stroke:1,"stroke-width":1,"stroke-opacity":1,"stroke-linecap":1,"stroke-linejoin":1,"stroke-dasharray":1,transform:1,"font-size":1,"font-family":1,"font-weight":1,"text-anchor":1,"dominant-baseline":1,opacity:1,id:1,class:1,style:1,dx:1,dy:1,offset:1,"stop-color":1,"stop-opacity":1,"clip-path":1,mask:1};
  var NS="http://www.w3.org/2000/svg",count=0;
  function build(src){
   count++;if(count>400)return null;
   var tag=src.localName;if(!allowed[tag])return null;
   var e=document.createElementNS(NS,tag);
+  if(tag==="style"){e.textContent=safeStyleSheet(src.textContent||"");return e;}
   for(var i=0;i<src.attributes.length;i++){
    var a=src.attributes[i],n=a.name.toLowerCase(),v=a.value;
    if(n==="href"||n==="xlink:href"){if(v.charAt(0)==="#")e.setAttribute("href",v);continue;}
+   if(n==="style"){var st=safeDecls(v);if(st)e.setAttribute("style",st);continue;}
+   if(n==="class"){e.setAttribute("class",String(v).replace(/[^a-zA-Z0-9 _-]/g,""));continue;}
    if(!attrs[n])continue;
    if(v.indexOf("javascript:")===0||v.indexOf("data:text/html")===0)continue;
    e.setAttribute(a.name,v);
