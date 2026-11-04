@@ -214,6 +214,8 @@ CONV_FILE = "/mnt/workspace/chat/conversations.json"
 conv_lock = threading.Lock()
 stop_lock = threading.Lock()
 STOP_EVENTS = {}
+JOBS = {}
+jobs_lock = threading.Lock()
 
 
 def _load_convs_db():
@@ -1145,7 +1147,7 @@ function restoreHist(){for(const m of history){
  if(m.role==='user')addMsg('me',m.content);
  else if(m.role==='assistant'){
   if((m.pending||m.interrupted)&&!String(m.content||'').trim())continue;
-  const el=addMsg('ai','');renderFinal(el,m.content,m.ui||[],m.uiInline||[]);
+  const el=addMsg('ai','');el.setAttribute('data-mid',m.mid||'');renderFinal(el,m.content,m.ui||[],m.uiInline||[]);
   if(m.pending||m.interrupted){
    const n=document.createElement('div');n.className='iui-pending';
    n.textContent=m.pending?(m.job_id?'后台生成中 · 稍后刷新':'生成中断 · 刷新前已保存部分内容'):'生成中断';
@@ -1154,6 +1156,7 @@ function restoreHist(){for(const m of history){
  }
 }
 scrollBottom();
+setTimeout(function(){if(!sending)resumePending();},80);
 }
 function isAtBottom(){var el=$('log');if(!el)return true;return el.scrollHeight-el.scrollTop-el.clientHeight<48;}
 function scrollBottom(){var el=$('log');if(!el)return;var old=el.style.scrollBehavior;el.style.scrollBehavior='auto';el.scrollTop=el.scrollHeight;el.style.scrollBehavior=old;}
@@ -1902,6 +1905,66 @@ function renderCtx(extraChars){
  $('ctxInfo').textContent=t;
  $('ctxInfo').style.color=pct>=80?'#e0a43a':'#9aa4b2';
 }
+async function resumeStream(convId,mid,jobId){
+ if(sending)return;
+ var el=document.querySelector('#log .msg.ai[data-mid="'+mid+'"]');
+ if(!el)return;
+ sending=true;currentAbort=new AbortController();currentJobId=jobId;syncingPaused=true;
+ var sb=$('send');if(sb){sb.textContent='■';sb.title='停止生成';sb.classList.add('stop');}
+ pendingStreams[mid]={convId:convId,acc:'',last:0};
+ try{
+  var resp=await fetch('api/chat/stream?id='+encodeURIComponent(jobId),{signal:currentAbort.signal});
+  if(!resp.ok)throw new Error('job ended');
+  var reader=resp.body.getReader(),dec=new TextDecoder(),buf='',acc='';
+  while(true){
+   var rd=await reader.read();if(rd.done)break;
+   buf+=dec.decode(rd.value,{stream:true});
+   var i;
+   while((i=buf.indexOf(String.fromCharCode(10)+String.fromCharCode(10)))>=0){
+    var line=buf.slice(0,i).trim();buf=buf.slice(i+2);
+    if(!line.startsWith('data: '))continue;
+    var data=line.slice(6);if(data==='[DONE]')continue;
+    try{var j=JSON.parse(data);}catch(e){continue;}
+    if(j.snapshot!==undefined)acc=String(j.snapshot||'');
+    if(j.delta)acc+=j.delta;
+    if(j.snapshot!==undefined||j.delta){
+     render(el,acc);
+     var ps=pendingStreams[mid];if(ps){ps.acc=acc;if(Date.now()-ps.last>700){ps.last=Date.now();updateAssistant(convId,mid,acc,{pending:true,job_id:jobId});}}
+    }
+   }
+  }
+  finishResume(convId,mid,el,acc,false);
+ }catch(e){
+  var ps2=pendingStreams[mid];var acc2=ps2?ps2.acc:'';
+  var stopped=(e&&(e.name==='AbortError'||String(e.message||'').indexOf('已停止')>=0));
+  finishResume(convId,mid,el,acc2,true);
+  if(currentId===convId&&!stopped)addMsg('sys','后台任务已结束');
+ }finally{
+  delete pendingStreams[mid];
+  sending=false;currentAbort=null;currentJobId=null;syncingPaused=false;saveConvs();
+  var sb2=$('send');if(sb2){sb2.textContent='↑';sb2.title='发送';sb2.disabled=false;sb2.classList.remove('stop');}
+ }
+}
+function finishResume(convId,mid,el,acc,interrupted){
+ var clean=String(acc||'');
+ var ct=clean.indexOf('</'+'think>');
+ if(ct>=0)clean=clean.slice(ct+8);
+ clean=clean.split('<'+'think>').join('').trim();
+ if(!clean)clean=String(acc||'');
+ var tp=splitToolCalls(clean),ui=[];
+ for(var ci=0;ci<tp.calls.length;ci++){var ts=toolSpec(tp.calls[ci]);if(ts)ui.push(ts);}
+ var finalText=tp.text||(ui.length?'（智能视图）':clean);
+ if(interrupted&&!finalText&&!ui.length){removeAssistant(convId,mid);}
+ else updateAssistant(convId,mid,finalText,{pending:false,interrupted:!!interrupted,job_id:null,ui:ui,uiInline:[]});
+ if(el&&el.isConnected){if(finalText||ui.length)renderFinal(el,finalText,ui,[]);}
+}
+function resumePending(){
+ if(sending)return;
+ for(var i=history.length-1;i>=0;i--){
+  var m=history[i];
+  if(m.role==='assistant'&&m.pending&&m.job_id){resumeStream(currentId,m.mid,m.job_id);return;}
+ }
+}
 async function send(){
  if(sending){setStatus('⏳ 当前回答还在生成，请稍候再发送');return;}
  const model=$('model').value,p=$('prompt').value.trim();if(!p)return;
@@ -1916,7 +1979,7 @@ async function send(){
  syncingPaused=true;currentJobId=null;
  try{
   try{const q=await (await fetch('api/queue')).json(); if(q.busy||q.waiting>0){addMsg('sys','⏳ 服务器正忙，请求已排队'+(q.waiting?('（前面还有 '+q.waiting+' 个）'):'')+'，请耐心等待…');}}catch(e){}
-  const el=addMsg('ai','');
+  const el=addMsg('ai','');el.setAttribute('data-mid',aid);
   const resp=await fetch('api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:model,messages:reqMsgs,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10),intelligent_ui:true,conversation_id:convId,assistant_mid:aid,conversation:currentConv()}),signal:currentAbort.signal});
   if(!resp.ok){const err='请求失败：'+await resp.text();el.textContent=err;removeAssistant(convId,aid);removeLastUser(convId);delete pendingStreams[aid];return;}
   const reader=resp.body.getReader(),dec=new TextDecoder();
@@ -1937,7 +2000,7 @@ async function send(){
   let clean=acc;
   const ct=acc.indexOf('</think>');
   if(ct>=0){clean=acc.slice(ct+8);}
-  clean=clean.split('<think>').join('').trim();
+ clean=clean.split('<'+'think>').join('').trim();
   if(!clean){clean=acc;}
   const toolParts=splitToolCalls(clean);
   const uiBlock=[];
@@ -2151,6 +2214,51 @@ class H(BaseHTTPRequestHandler):
             return self.send_json(200, {"object": "list", "data": data})
         if self.path.startswith("/api/apikey"):
             return self.send_json(200, {"key": API_KEY})
+        if self.path.startswith("/api/chat/stream"):
+            q2 = parse_qs(urlparse(self.path).query)
+            jid = (q2.get("id") or [""])[0]
+            with jobs_lock:
+                job = JOBS.get(jid)
+            if not job:
+                return self.send_json(404, {"error": "job not found"})
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+            except Exception:
+                return
+            try:
+                with job["cond"]:
+                    snap = job["text"]
+                    status = job["status"]
+                self.wfile.write(("data: " + json.dumps({"snapshot": snap}, ensure_ascii=False) + chr(10) + chr(10)).encode("utf-8"))
+                self.wfile.flush()
+                off = len(snap)
+                while True:
+                    chunk = ""
+                    with job["cond"]:
+                        while len(job["text"]) <= off and job["status"] == "running":
+                            job["cond"].wait(15)
+                        chunk = job["text"][off:]
+                        status = job["status"]
+                    if chunk:
+                        off += len(chunk)
+                        self.wfile.write(("data: " + json.dumps({"delta": chunk}, ensure_ascii=False) + chr(10) + chr(10)).encode("utf-8"))
+                        self.wfile.flush()
+                    if status != "running":
+                        self.wfile.write(b"data: [DONE]" + bytes([10, 10]))
+                        self.wfile.flush()
+                        break
+                    if not chunk:
+                        self.wfile.write(b": keepalive" + bytes([10, 10]))
+                        self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except Exception:
+                pass
+            return
         if self.path.startswith("/api/convs"):
             with conv_lock:
                 items = _load_convs_db()
@@ -2624,12 +2732,22 @@ class H(BaseHTTPRequestHandler):
             mid = str(d.get("assistant_mid") or "")
             job_id = secrets.token_hex(10)
             stop_event = threading.Event()
+            job = {"id": job_id, "text": "", "status": "running", "error": None,
+                   "cond": threading.Condition(), "updated": time.time()}
             with stop_lock:
                 STOP_EVENTS[job_id] = stop_event
+            with jobs_lock:
+                nowj = time.time()
+                for old_id, old_job in list(JOBS.items()):
+                    if old_job.get("status") != "running" and nowj - old_job.get("updated", 0) > 600:
+                        JOBS.pop(old_id, None)
+                JOBS[job_id] = job
             with q_lock:
                 if q_state["waiting"] >= int(settings.get("max_queue") or 8):
                     with stop_lock:
                         STOP_EVENTS.pop(job_id, None)
+                    with jobs_lock:
+                        JOBS.pop(job_id, None)
                     return self.send_json(429, {"error": "busy, retry later"})
                 q_state["waiting"] += 1
             client = {"ok": True}
@@ -2690,6 +2808,10 @@ class H(BaseHTTPRequestHandler):
                             if not delta:
                                 continue
                             job_text += delta
+                            with job["cond"]:
+                                job["text"] = job_text
+                                job["updated"] = time.time()
+                                job["cond"].notify_all()
                             send_evt({"delta": delta})
                             now = time.time()
                             if conv_id and mid and now - last_db > 0.8:
@@ -2699,6 +2821,10 @@ class H(BaseHTTPRequestHandler):
                 if conv_id and mid:
                     _update_conv_message(conv_id, mid, final_text, False,
                                          {"job_id": None, "interrupted": (stopped and not final_text)})
+                with job["cond"]:
+                    job["status"] = "stopped" if stopped else "done"
+                    job["updated"] = time.time()
+                    job["cond"].notify_all()
                 if client["ok"]:
                     try:
                         self.wfile.write(b"data: [DONE]" + bytes([10, 10]))
@@ -2710,6 +2836,11 @@ class H(BaseHTTPRequestHandler):
                 if conv_id and mid:
                     _update_conv_message(conv_id, mid, final_text, False,
                                          {"job_id": None, "interrupted": True})
+                with job["cond"]:
+                    job["status"] = "error"
+                    job["error"] = repr(e)[:200]
+                    job["updated"] = time.time()
+                    job["cond"].notify_all()
                 send_evt({"delta": chr(10) + "[错误] " + repr(e)[:200]})
             finally:
                 with stop_lock:
