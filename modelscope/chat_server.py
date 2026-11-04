@@ -1617,8 +1617,19 @@ function render(el,acc){
  }else if(implicit){
   think=acc;ans='';thinking=true;
  }
+ var oldThink=el.querySelector('details.think');
+ var oldOpen=oldThink?oldThink.open:null;
+ var oldBody=oldThink?oldThink.querySelector('.think-body'):null;
+ var oldScroll=oldBody?oldBody.scrollTop:0;
+ var oldAtBottom=oldBody?(oldBody.scrollHeight-oldBody.scrollTop-oldBody.clientHeight<24):false;
  el.innerHTML='';
- if(think){el.appendChild(thinkBlock(think,'💭 '+(thinking?'思考中…':'思考'),true,false));}
+ if(think){
+  var tb=thinkBlock(think,'💭 '+(thinking?'思考中…':'思考'),true,false);
+  if(oldOpen===false)tb.open=false;
+  el.appendChild(tb);
+  var nb=tb.querySelector('.think-body');
+  if(nb){if(oldBody){if(oldAtBottom)nb.scrollTop=nb.scrollHeight;else nb.scrollTop=oldScroll;}else nb.scrollTop=nb.scrollHeight;}
+ }
  var parts=splitToolCalls(ans);
  const a=document.createElement('div');a.textContent=parts.text;el.appendChild(a);
  if(parts.pending||parts.calls.length){const p=document.createElement('div');p.className='iui-pending';p.textContent='工具调用生成中…';el.appendChild(p);}
