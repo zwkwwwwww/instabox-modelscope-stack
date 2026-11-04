@@ -648,7 +648,7 @@ button,input,select,textarea{font:inherit}
 #prompt::placeholder{color:var(--dim)}
 #send{width:36px;height:36px;flex:0 0 36px;border:0;border-radius:10px;background:var(--text);color:#0b0c0e;font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,transform .1s}
 #send:hover{background:#fff}
-#send:active{transform:scale(.96)}
+#send:active{transform:scale(.96)}#send:disabled{opacity:.45;cursor:default;transform:none}
 .hint{max-width:900px;margin:7px auto 0;font:10.5px/1.4 var(--mono);color:var(--dim);display:flex;justify-content:space-between;gap:10px}
 
 /* ---------- modals ---------- */
@@ -827,7 +827,7 @@ const $=id=>document.getElementById(id);
 let models=[],loaded=null,loading=null;
 let history=[];
 const CONV_KEY='muse_convs_v1';
-let convs=[],currentId=null,lastUserPrompt='',pendingStreams={};
+let convs=[],currentId=null,lastUserPrompt='',pendingStreams={},sending=false;
 function uid(){return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function makeTitle(s){
  s=String(s||'');
@@ -1021,6 +1021,7 @@ function initConvs(){
 function restoreHist(){for(const m of history){
  if(m.role==='user')addMsg('me',m.content);
  else if(m.role==='assistant'){
+  if((m.pending||m.interrupted)&&!String(m.content||'').trim())continue;
   const el=addMsg('ai','');renderFinal(el,m.content,m.ui||[],m.uiInline||[]);
   if(m.pending||m.interrupted){
    const n=document.createElement('div');n.className='iui-pending';
@@ -1648,7 +1649,9 @@ function renderCtx(extraChars){
  $('ctxInfo').style.color=pct>=80?'#e0a43a':'#9aa4b2';
 }
 async function send(){
+ if(sending){setStatus('⏳ 当前回答还在生成，请稍候再发送');return;}
  const model=$('model').value,p=$('prompt').value.trim();if(!p)return;
+ sending=true;var sendBtn=$('send');if(sendBtn)sendBtn.disabled=true;
  lastUserPrompt=p;const convId=currentId;
  $('prompt').value='';addMsg('me',p);
  appendToConv(convId,{role:'user',content:p});
@@ -1714,8 +1717,14 @@ async function send(){
   if(currentId===convId&&!el.isConnected){const e=addMsg('ai','');renderFinal(e,finalText,uiBlock,uiInline);}
  }catch(e){
   var ps2=pendingStreams[aid];
-  if(ps2){updateAssistant(convId,aid,ps2.acc||'',{pending:false,interrupted:true});delete pendingStreams[aid];}
+  if(ps2){
+   if(!String(ps2.acc||'').trim()){removeAssistant(convId,aid);removeLastUser(convId);}
+   else{updateAssistant(convId,aid,ps2.acc||'',{pending:false,interrupted:true});}
+   delete pendingStreams[aid];
+  }
   if(currentId===convId)addMsg('sys','出错：'+e.message);
+ } finally {
+  sending=false;var sb2=$('send');if(sb2)sb2.disabled=false;
  }
 }
 window.addEventListener('beforeunload',function(){
