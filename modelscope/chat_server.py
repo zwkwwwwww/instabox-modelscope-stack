@@ -123,7 +123,7 @@ UI_SYSTEM_PROMPT = """你可以在正文之后附加一个“智能界面”块�
 {"type":"chart","chart":"bar或line","title":"...","labels":["..."],"values":[1,2,3],"unit":"..."}
 {"type":"calculator","title":"...","fields":[{"key":"amount","label":"金额","value":100000}],"formula":"amount*0.1","unit":"元"}
 {"type":"flow","title":"...","steps":["第一步","第二步"]}
-不要输出 HTML，不要解释这个块。图表请求必须用 chart，贷款/分摊必须用 calculator；如果正文有数据表，优先把它转成组件而不是重复表格。"""
+不要输出 HTML，不要解释这个块。图表请求必须用 chart，贷款/分摊必须用 calculator；如果正文有数据表，优先把它转成组件而不是重复表格。用户说“随便画/画一个”时不要反问风格，直接给一个标题注明“示例”的 chart。"""
 
 UI_PLANNER_PROMPT = """你是 UI 规格生成器。根据“问题”和“回答”，只输出一个 JSON 对象，不要输出解释、Markdown 代码围栏或 HTML。
 可用类型与严格格式：
@@ -137,7 +137,7 @@ UI_PLANNER_PROMPT = """你是 UI 规格生成器。根据“问题”和“回�
 1. 只输出 JSON 对象本身，不要 ```、解释或 HTML。
 2. labels 与 values 必须等长，values 必须是数字；数据只能来自回答，不能编造。
 3. 对比/表格用 compare；趋势/柱状/折线用 chart；贷款用 mode=loan；AA/分摊用 mode=split；其他计算才用 formula。
-4. 无法生成有效规格时输出 {"type":"none"}。"""
+4. 如果问题只是“随便画/画一个”且回答没有数据，给一个带示例数据和“示例”标题的 chart；无法生成有效规格时输出 {"type":"none"}。"""
 
 def _ui_extract_json(text):
     t = str(text or "")
@@ -1181,6 +1181,31 @@ function extractMdTables(text){
  }
  return {text:out.join('\n').replace(/\n{3,}/g,'\n\n').trim(),inline:inline};
 }
+function extractChartFromText(text){
+ var s=String(text||'');
+ var parts=s.split("```"),sources=[];
+ for(var pi=1;pi<parts.length;pi+=2)sources.push(parts[pi]);
+ if(!sources.length)return null;
+ for(var bi=0;bi<sources.length;bi++){
+  var lines=sources[bi].split(String.fromCharCode(10)),labels=[],vals=[];
+  for(var li=0;li<lines.length;li++){
+   var line=lines[li].split("**").join("").split("`").join("").trim();
+   if(!line)continue;
+   var cp=line.indexOf(":");if(cp<0)cp=line.indexOf("：");
+   if(cp<0)continue;
+   var label=line.slice(0,cp).trim().replace(/^[-*•]/,"").trim();
+   var rest=line.slice(cp+1).trim();
+   var val=parseFloat(rest);
+   if(!label||label.length>40||!isFinite(val))continue;
+   labels.push(label);vals.push(val);
+  }
+  if(labels.length>=2)return {type:"chart",chart:"bar",title:"数据图表",labels:labels,values:vals};
+ }
+ return null;
+}
+function demoChartSpec(){
+ return {type:"chart",chart:"bar",title:"示例图表（演示数据）",labels:["A","B","C","D"],values:[12,18,15,24]};
+}
 function prepareUI(text){
  var p=splitUI(text);
  if(!p.specs.length){var a=extractMdTables(p.text);p.text=a.text;p.inline=a.inline;}
@@ -1433,7 +1458,7 @@ function parseUISpecText(raw){
  return j;
 }
 function wantsUIExplicit(s){return /智能(界面|视图|UI)|smart\s*ui/i.test(String(s||''));}
-function uiIntent(s){return /对比|比较|vs\b|图表|柱状|折线|趋势|曲线|可视化|计算|算一下|算算|月供|利息|分摊|贷款|预算|画.*图|流程|步骤/i.test(String(s||''));}
+function uiIntent(s){return /对比|比较|vs\b|图表|柱状|折线|趋势|曲线|可视化|计算|算一下|算算|月供|利息|分摊|贷款|预算|画|绘|作图|流程|步骤/i.test(String(s||''));}
 async function planUI(model,question,answer){
  var r=await jpost('api/ui',{model:model,question:question,answer:answer});
  if(!r.ok)return null;
@@ -1539,20 +1564,31 @@ async function send(){
   const cleanParts=prepareUI(clean);
   const autoSpecs=(cleanParts.specs||[]).concat(cleanParts.inline||[]);
   const hasAuto=autoSpecs.length>0;
-  const wantChart=/图表|柱状|折线|趋势|曲线|可视化|chart/i.test(p);
+  const wantChart=/图表|柱状|折线|趋势|曲线|可视化|chart|画|绘|作图/i.test(p);
+  const drawAny=/随便画|随便|画一个|画个/.test(p);
   const wantCalc=/计算|算一|算算|月供|利息|分摊|贷款|预算|公式/i.test(p);
   const hasChart=autoSpecs.some(function(s){return s&&s.type==='chart';});
   const hasCalc=autoSpecs.some(function(s){return s&&s.type==='calculator';});
   let planned=null;
-  if((!hasAuto||(wantChart&&!hasChart)||(wantCalc&&!hasCalc))&&(wantsUIExplicit(p)||uiIntent(p)||wantChart||wantCalc)){
+  if(!drawAny&&(!hasAuto||(wantChart&&!hasChart)||(wantCalc&&!hasCalc))&&(wantsUIExplicit(p)||uiIntent(p)||wantChart||wantCalc)){
    const pend=document.createElement('div');pend.className='iui-pending';pend.textContent='智能视图生成中…';el.appendChild(pend);
    try{planned=await planUI(model,p,clean);}catch(e2){}
    pend.remove();
    if(planned){const pn=renderUI(planned);if(pn)el.appendChild(pn);}
   }
-  const hasUI=hasAuto||!!planned;
+  var hasChartNow=hasChart||(planned&&planned.type==='chart');
+  var fallbackChart=null;
+  if(wantChart&&!hasChartNow){
+   fallbackChart=extractChartFromText(clean);
+   if(fallbackChart){const fn=renderUI(fallbackChart);if(fn)el.appendChild(fn);}
+  }
+  if(wantChart&&!hasChartNow&&!fallbackChart&&drawAny){
+   fallbackChart=demoChartSpec();
+   const fn=renderUI(fallbackChart);if(fn)el.appendChild(fn);
+  }
+  const hasUI=hasAuto||!!planned||!!fallbackChart;
   const finalText=cleanParts.text||(hasUI?'（智能视图）':clean);
-  const uiBlock=cleanParts.specs.concat(planned?[planned]:[]);
+  const uiBlock=cleanParts.specs.concat(planned?[planned]:[]).concat(fallbackChart?[fallbackChart]:[]);
   const uiInline=cleanParts.inline||[];
   updateAssistant(convId,aid,finalText,{pending:false,ui:uiBlock,uiInline:uiInline});
   delete pendingStreams[aid];
