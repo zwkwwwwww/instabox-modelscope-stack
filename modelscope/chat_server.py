@@ -355,92 +355,184 @@ def get_embedder():
 
 
 HTML = r"""<!doctype html><html lang="zh"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>魔搭 Chat</title>
 <link rel="stylesheet" href="static/katex.min.css">
 <style>
-:root{color-scheme:dark}
-body{margin:0;font:15px/1.6 system-ui,-apple-system,'Segoe UI',sans-serif;background:#0f1115;color:#e6e6e6;height:100vh;display:flex;flex-direction:column}
-#bar{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#171a21;border-bottom:1px solid #2a2f3a;flex-wrap:wrap}
-#bar a#imgLink{background:#0f1115;color:#e6e6e6;border:1px solid #333a48;border-radius:8px;padding:7px 10px;font-size:14px;text-decoration:none}
-#bar select,#bar button{background:#0f1115;color:#e6e6e6;border:1px solid #333a48;border-radius:8px;padding:7px 10px;font-size:14px}
-#bar button{cursor:pointer}
-#bar button:disabled{opacity:.5;cursor:default}
-#status{font-size:13px;color:#9aa4b2}
-#keyModal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:99}
-#keyBox{background:#171a21;border:1px solid #2a2f3a;border-radius:12px;padding:20px;width:min(600px,92vw)}
-#keyBox h3{margin:0 0 6px;font-size:16px}
-#keyBox p{font-size:13px;color:#9aa4b2;margin:0 0 12px;word-break:break-all}
-#keyVal{width:100%;box-sizing:border-box;background:#0f1115;color:#e6e6e6;border:1px solid #333a48;border-radius:8px;padding:10px;font-family:ui-monospace,Consolas,monospace;font-size:13px}
-#keyBox .row{display:flex;gap:10px;margin-top:14px;justify-content:flex-end}
-#keyBox button{background:#0f1115;color:#e6e6e6;border:1px solid #333a48;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px}
-#keyBox button.ok{border-color:#2f6feb;color:#7aa2ff}
-#setModal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:100}
-#setBox{background:#171a21;border:1px solid #2a2f3a;border-radius:12px;padding:20px;width:min(480px,92vw)}
-#setBox h3{margin:0 0 6px;font-size:16px}
-#setBox p{font-size:13px;color:#9aa4b2;margin:0 0 8px}
-#setBox .field{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0;font-size:14px}
-#setBox select,#setBox input{background:#0f1115;color:#e6e6e6;border:1px solid #333a48;border-radius:8px;padding:7px 10px;font-size:14px;min-width:180px;box-sizing:border-box}
-#setBox .row{display:flex;gap:10px;margin-top:14px;justify-content:flex-end}
-#setBox button{background:#0f1115;color:#e6e6e6;border:1px solid #333a48;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px}
-#setBox button.ok{border-color:#2f6feb;color:#7aa2ff}
-#thinkWrap{font-size:13px;color:#9aa4b2;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
-#log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
-.msg{max-width:82%;padding:10px 14px;border-radius:12px;white-space:pre-wrap;word-break:break-word}
-.me{align-self:flex-end;background:#1f3a5f}
-.ai{align-self:flex-start;background:#1b2029;border:1px solid #2a3140}
-.sys{align-self:center;color:#8b95a5;font-size:13px;background:none;padding:2px}
-.think{color:#8b95a5;font-size:13px;border-left:2px solid #333a48;padding-left:8px;margin-bottom:6px;white-space:pre-wrap}
-#progWrap{width:220px;height:10px;background:#0f1115;border:1px solid #333a48;border-radius:6px;overflow:hidden;display:none;align-self:center}
-#progBar{height:100%;width:0%;background:linear-gradient(90deg,#2f6feb,#7aa2ff);transition:width 1s linear}
-#progText{font-size:12px;color:#9aa4b2}
-#ctxInfo{font-size:12px;color:#9aa4b2;cursor:help}
-#inputbar{display:flex;gap:10px;padding:12px 14px;background:#171a21;border-top:1px solid #2a2f3a}
-#prompt{flex:1;resize:none;height:44px;background:#0f1115;color:#e6e6e6;border:1px solid #333a48;border-radius:10px;padding:10px;font:inherit}
-#send{padding:0 22px;border-radius:10px;border:1px solid #2f6feb;background:#2f6feb;color:#fff;font-size:15px;cursor:pointer}
-.md{line-height:1.7}
-.md h1,.md h2,.md h3,.md h4{margin:14px 0 8px;line-height:1.3}
-.md h1{font-size:1.5em}.md h2{font-size:1.3em}.md h3{font-size:1.15em}
-.md p{margin:8px 0}
-.md ul,.md ol{margin:8px 0;padding-left:24px}
+:root{
+ color-scheme:dark;
+ --bg:#0b0c0e;--panel:#0f1012;--card:#141518;--card2:#1a1c1f;
+ --border:#232529;--border2:#2d3035;--text:#e8e8e6;--muted:#8b8f97;--dim:#666b73;
+ --accent:#9ece6a;--accent-soft:rgba(158,206,106,.12);--blue:#7aa2ff;--warn:#e0a43a;--danger:#f7768e;
+ --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+ --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei UI','PingFang SC',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14.5px/1.6 var(--sans);overflow:hidden;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit}
+#app{display:flex;height:100vh}
+
+/* ---------- sidebar ---------- */
+#sidebar{width:252px;flex:0 0 252px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 12px;gap:14px;min-height:0}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 6px 4px}
+.logo{width:26px;height:26px;border-radius:8px;background:var(--text);color:#0b0c0e;display:flex;align-items:center;justify-content:center;font:700 13px/1 var(--mono);letter-spacing:-.04em}
+.brand-name{font-weight:650;font-size:14px;letter-spacing:.01em}
+.brand-sub{font-size:11px;color:var(--dim);margin-top:1px}
+#clearBtn{display:flex;align-items:center;gap:8px;width:100%;border:0;border-radius:9px;background:var(--text);color:#0b0c0e;padding:9px 11px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+#clearBtn:hover{background:#fff}
+#clearBtn svg{width:15px;height:15px}
+.side-label{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:0 8px;margin:2px 0 6px}
+.threads{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto}
+.thread{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--card);border:1px solid var(--border);color:var(--text);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thread .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);flex:0 0 auto}
+.side-note{font-size:11px;color:var(--dim);padding:0 8px;line-height:1.5}
+.side-nav{margin-top:auto;display:flex;flex-direction:column;gap:2px;padding-top:8px;border-top:1px solid var(--border)}
+.side-nav a,.side-nav button{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;color:var(--muted);padding:8px 9px;border-radius:7px;font-size:12.5px;text-decoration:none;cursor:pointer;text-align:left}
+.side-nav a:hover,.side-nav button:hover{background:var(--card);color:var(--text)}
+.side-nav svg{width:15px;height:15px;opacity:.8;flex:0 0 auto}
+.side-foot{display:flex;align-items:center;gap:7px;padding:9px 9px 2px;color:var(--dim);font-size:11px;border-top:1px solid var(--border)}
+.side-foot .pulse{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+
+/* ---------- main ---------- */
+#main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+#bar{display:flex;align-items:center;gap:8px;padding:10px 22px;border-bottom:1px solid var(--border);background:rgba(15,16,18,.82);backdrop-filter:blur(10px);flex-wrap:wrap;min-height:54px}
+#menuBtn{display:none;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:8px;cursor:pointer}
+.ctl{appearance:none;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12.5px;outline:none;cursor:pointer;transition:border-color .15s,background .15s}
+.ctl:hover{border-color:var(--border2);background:var(--card2)}
+.ctl:focus{border-color:#4a4f58}
+#loadBtn{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 11px;font-size:12.5px;cursor:pointer}
+#loadBtn:hover:not(:disabled){background:var(--card2);border-color:var(--border2)}
+#loadBtn:disabled{opacity:.45;cursor:default}
+#model{max-width:230px}
+#ctxInfo{font-size:11.5px;color:var(--dim);white-space:nowrap;margin-left:2px}
+#status{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#status::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);flex:0 0 auto}
+#progWrap{display:none;align-items:center;gap:10px;padding:7px 22px;border-bottom:1px solid var(--border);background:var(--panel)}
+#progBar{height:3px;flex:0 0 180px;background:var(--accent);border-radius:2px;width:0;transition:width .8s linear}
+#progText{font:11px/1.4 var(--mono);color:var(--muted);white-space:nowrap}
+
+/* ---------- messages ---------- */
+#log{flex:1;overflow-y:auto;padding:26px 22px 40px;display:flex;flex-direction:column;gap:0;scroll-behavior:smooth}
+#log::-webkit-scrollbar,.threads::-webkit-scrollbar{width:8px}
+#log::-webkit-scrollbar-thumb,.threads::-webkit-scrollbar-thumb{background:#2a2d32;border-radius:8px}
+#log::-webkit-scrollbar-track,.threads::-webkit-scrollbar-track{background:transparent}
+.msg{position:relative;max-width:none;padding:18px 0;border-bottom:1px solid rgba(35,37,41,.65);white-space:pre-wrap;word-break:break-word}
+.msg::before{display:block;font:600 10px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-bottom:9px}
+.msg.me{max-width:86%;align-self:flex-end;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 15px;margin:6px 0 18px;white-space:pre-wrap}
+.msg.me::before{content:'YOU';color:var(--muted)}
+.msg.ai{padding:8px 0 22px;border-bottom:1px solid rgba(35,37,41,.65)}
+.msg.ai::before{content:'ASSISTANT'}
+.msg.sys{align-self:center;max-width:92%;border:1px solid var(--border);background:var(--panel);border-radius:999px;padding:5px 12px;margin:8px 0;color:var(--dim);font-size:11.5px;text-align:center}
+.msg.sys::before{display:none}
+.think{color:var(--dim);font:12.5px/1.65 var(--mono);border-left:2px solid var(--border2);padding:8px 0 8px 12px;margin:0 0 12px;white-space:pre-wrap;max-height:260px;overflow:auto}
+.md{line-height:1.75;font-size:14.5px}
+.md h1,.md h2,.md h3,.md h4{margin:18px 0 8px;line-height:1.3;font-weight:650;letter-spacing:-.01em}
+.md h1{font-size:1.42em}.md h2{font-size:1.24em}.md h3{font-size:1.1em}
+.md p{margin:9px 0}
+.md ul,.md ol{margin:9px 0;padding-left:24px}
 .md li{margin:4px 0}
-.md code{background:#0f1115;border:1px solid #2a2f3a;border-radius:6px;padding:1px 5px;font-family:ui-monospace,Consolas,monospace;font-size:0.92em}
-.md pre{background:#0f1115;border:1px solid #2a2f3a;border-radius:10px;padding:12px;overflow-x:auto;margin:10px 0}
-.md pre code{border:none;background:none;padding:0;font-size:0.9em}
-.md blockquote{border-left:3px solid #333a48;margin:8px 0;padding-left:12px;color:#9aa4b2}
-.md table{border-collapse:collapse;margin:10px 0;display:block;overflow-x:auto}
-.md th,.md td{border:1px solid #333a48;padding:6px 10px}
-.md th{background:#171a21}
-.md a{color:#7aa2ff}
-.md hr{border:none;border-top:1px solid #2a2f3a;margin:14px 0}
+.md code{background:#0d0e10;border:1px solid var(--border);border-radius:5px;padding:1px 5px;font-family:var(--mono);font-size:.9em;color:#d7e0c8}
+.md pre{background:#0d0e10;border:1px solid var(--border);border-radius:10px;padding:13px 14px;overflow-x:auto;margin:12px 0}
+.md pre code{border:0;background:none;padding:0;font-size:12.5px;color:#c9d1d9;line-height:1.6}
+.md blockquote{border-left:2px solid var(--border2);margin:10px 0;padding-left:13px;color:var(--muted)}
+.md table{border-collapse:collapse;margin:12px 0;display:block;overflow-x:auto;font-size:13px}
+.md th,.md td{border:1px solid var(--border);padding:6px 10px}
+.md th{background:var(--panel);color:var(--muted);font-weight:600}
+.md a{color:var(--blue);text-decoration:none}
+.md a:hover{text-decoration:underline}
+.md hr{border:0;border-top:1px solid var(--border);margin:18px 0}
 .md .katex-display{overflow-x:auto;overflow-y:hidden}
+#log:empty::before{content:'M';display:flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:13px;background:var(--card);border:1px solid var(--border);color:var(--muted);font:700 18px var(--mono);margin:auto auto 14px}
+#log:empty::after{content:'开始一个新对话  ·  本地 CPU 推理';color:var(--dim);font-size:12px;letter-spacing:.02em;text-align:center;margin:0 auto auto}
+
+/* ---------- composer ---------- */
+#inputbar{padding:12px 22px 18px;background:linear-gradient(180deg,rgba(11,12,14,0),var(--bg) 26%)}
+.composer{max-width:900px;margin:0 auto;display:flex;gap:10px;align-items:flex-end;background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:9px 9px 9px 14px;box-shadow:0 10px 35px rgba(0,0,0,.28);transition:border-color .15s}
+.composer:focus-within{border-color:#4a4f58}
+#prompt{flex:1;resize:none;height:40px;max-height:168px;background:transparent;border:0;color:var(--text);padding:8px 0;outline:none;line-height:1.55}
+#prompt::placeholder{color:var(--dim)}
+#send{width:36px;height:36px;flex:0 0 36px;border:0;border-radius:10px;background:var(--text);color:#0b0c0e;font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,transform .1s}
+#send:hover{background:#fff}
+#send:active{transform:scale(.96)}
+.hint{max-width:900px;margin:7px auto 0;font:10.5px/1.4 var(--mono);color:var(--dim);display:flex;justify-content:space-between;gap:10px}
+
+/* ---------- modals ---------- */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:99;padding:20px}
+#keyBox,#setBox{background:var(--panel);border:1px solid var(--border2);border-radius:14px;padding:22px;width:min(560px,94vw);box-shadow:0 24px 70px rgba(0,0,0,.55)}
+#keyBox h3,#setBox h3{margin:0 0 6px;font-size:15px;font-weight:650}
+#keyBox p,#setBox p{font-size:12px;color:var(--muted);margin:0 0 12px;word-break:break-all;line-height:1.6}
+#keyVal{width:100%;background:#0d0e10;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:var(--mono);font-size:12px}
+#keyBox .row,#setBox .row{display:flex;gap:8px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap}
+#keyBox button,#setBox button{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 13px;cursor:pointer;font-size:12.5px}
+#keyBox button:hover,#setBox button:hover{background:var(--card2);border-color:var(--border2)}
+#keyBox button.ok,#setBox button.ok{background:var(--text);color:#0b0c0e;border-color:var(--text)}
+#setBox .field{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0;font-size:12.5px;color:var(--muted)}
+#setBox select,#setBox input{background:#0d0e10;color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12.5px;min-width:170px;box-sizing:border-box;outline:none}
+#setBox input:focus,#setBox select:focus{border-color:#4a4f58}
+#scrim{display:none}
+
+@media(max-width:900px){
+ #sidebar{position:fixed;left:0;top:0;bottom:0;z-index:120;transform:translateX(-100%);transition:transform .22s ease;box-shadow:18px 0 50px rgba(0,0,0,.45)}
+ body.nav-open #sidebar{transform:none}
+ #scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:110}
+ body.nav-open #scrim{display:block}
+ #menuBtn{display:flex}
+ #bar{padding:9px 14px}
+ #log{padding:18px 14px 30px}
+ #inputbar{padding:10px 12px 14px}
+ .msg.me{max-width:94%}
+ #status{max-width:100%;order:10;margin-left:0}
+ #ctxInfo{order:11}
+ #model{max-width:170px}
+ .hint{display:none}
+}
 </style></head><body>
-<div id="bar">
- <select id="model"></select>
- <button id="loadBtn">加载模型</button>
- <select id="thinkLevel" title="思考强度"><option value="off">思考：关</option><option value="low">思考：低</option><option value="medium">思考：中</option><option value="high" selected>思考：高</option></select>
- <select id="maxTok" title="最大输出长度">
-  <option value="1024">1024 tokens</option>
-  <option value="2048">2048 tokens</option>
-  <option value="4096" selected>4096 tokens</option>
-  <option value="8192">8192 tokens</option>
- </select>
- <button id="clearBtn">清空对话</button>
- <button id="keyBtn">🔑 API Key</button>
- <button id="setBtn">⚙️ 设置</button>
- <a href="img" target="_blank" id="imgLink">🖼️ 生图</a>
- <span id="status">连接中…</span>
- <div id="progWrap"><div id="progBar"></div></div>
- <span id="progText"></span>
- <span id="ctxInfo" title="上下文占用估算（由服务端预算裁剪后计算）">上下文 ≈ —</span>
+<div id="app">
+ <aside id="sidebar">
+  <div class="brand">
+   <div class="logo">M</div>
+   <div><div class="brand-name">Muse Chat</div><div class="brand-sub">魔搭 · 本地推理</div></div>
+  </div>
+  <button id="clearBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新对话</button>
+  <div>
+   <div class="side-label">会话</div>
+   <div class="threads"><div class="thread"><span class="dot"></span>当前对话</div></div>
+   <div class="side-note">本地保存最近 80 条消息</div>
+  </div>
+  <nav class="side-nav">
+   <a href="img" target="_blank" id="imgLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>生图</a>
+   <button id="keyBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 3l4 4M14 6l3 3"/></svg>API Key</button>
+   <button id="setBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.5.55.89 1.06 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>设置</button>
+  </nav>
+  <div class="side-foot"><span class="pulse"></span>CPU · 本地 GGUF</div>
+ </aside>
+
+ <div id="main">
+  <div id="bar">
+   <button id="menuBtn" title="菜单"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+   <select id="model" class="ctl" title="模型"></select>
+   <button id="loadBtn">加载模型</button>
+   <select id="thinkLevel" class="ctl" title="思考强度"><option value="off">思考：关</option><option value="low">思考：低</option><option value="medium">思考：中</option><option value="high" selected>思考：高</option></select>
+   <select id="maxTok" class="ctl" title="最大输出长度"><option value="1024">1024 tokens</option><option value="2048">2048 tokens</option><option value="4096" selected>4096 tokens</option><option value="8192">8192 tokens</option></select>
+   <span id="ctxInfo" title="上下文占用估算（由服务端预算裁剪后计算）">上下文 ≈ —</span>
+   <span id="status">连接中…</span>
+  </div>
+  <div id="progWrap"><div id="progBar"></div><span id="progText"></span></div>
+  <div id="log"></div>
+  <div id="inputbar">
+   <div class="composer">
+    <textarea id="prompt" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+    <button id="send" title="发送">↑</button>
+   </div>
+   <div class="hint"><span>Enter 发送 · Shift+Enter 换行</span><span>魔搭 CPU · 本地推理</span></div>
+  </div>
+ </div>
 </div>
-<div id="log"></div>
-<div id="inputbar">
- <textarea id="prompt" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
- <button id="send">发送</button>
-</div>
-<div id="keyModal"><div id="keyBox">
- <h3>🔑 API Key 管理</h3>
+<div id="scrim"></div>
+
+<div id="keyModal" class="modal"><div id="keyBox">
+ <h3>API Key 管理</h3>
  <p>OpenAI 兼容接口：<b>https://YOUR_DOMAIN/v1</b><br>请求头：Authorization: Bearer &lt;key&gt;</p>
  <input id="keyVal" readonly />
  <div class="row">
@@ -449,8 +541,8 @@ body{margin:0;font:15px/1.6 system-ui,-apple-system,'Segoe UI',sans-serif;backgr
   <button id="keyClose">关闭</button>
  </div>
 </div></div>
-<div id="setModal"><div id="setBox">
- <h3>⚙️ 设置</h3>
+<div id="setModal" class="modal"><div id="setBox">
+ <h3>设置</h3>
  <p>修改后点「保存设置」立即生效</p>
  <div class="field"><label>默认思考强度</label><select id="setThink"><option value="off">关</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></div>
  <div class="field"><label>默认输出长度</label><select id="setMaxTok"><option value="1024">1024</option><option value="2048">2048</option><option value="4096">4096</option><option value="8192">8192</option></select></div>
@@ -476,7 +568,7 @@ function addMsg(kind,text){const d=document.createElement('div');d.className='ms
 async function jget(u){const r=await fetch(u,{cache:'no-store'});return r.json();}
 async function jpost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});}
 function setStatus(t){$('status').textContent=t;}
-function setProg(show,pct,txt){$('progWrap').style.display=show?'block':'none';$('progBar').style.width=(pct||0)+'%';$('progText').textContent=txt||'';}
+function setProg(show,pct,txt){$('progWrap').style.display=show?'flex':'none';$('progBar').style.width=(pct||0)+'%';$('progText').textContent=txt||'';}
 let refreshing=false,prevLoading=false,hideT=null,progHoldUntil=0;
 async function refresh(){
  if(refreshing)return;
@@ -485,7 +577,7 @@ async function refresh(){
   const s=await jget('api/status');
   models=s.models||[];loaded=s.loaded;loading=s.loading;
   const sel=$('model');
-  if(sel.options.length===0){for(const m of models){const o=document.createElement('option');o.value=m.id;o.textContent=m.label;sel.appendChild(o);}}
+  if(sel.options.length===0){for(const m of models){const o=document.createElement('option');o.value=m.id;o.textContent=m.label;sel.appendChild(o);}}if(loaded&&!sel.dataset.init){sel.value=loaded;sel.dataset.init='1';}
   if(loading){
    const el=s.load_elapsed!=null?s.load_elapsed:0;
    const rp=(typeof s.load_progress==='number')?s.load_progress:null;
@@ -652,7 +744,22 @@ $('keyRotate').onclick=async function(){
  else{addMsg('sys','重置失败：'+(j.error||'未知错误'));}
 };
 history=loadHist();restoreHist();
-</script></body></html>"""
+</script>
+<script>
+(function(){
+ var m=document.getElementById('menuBtn'),sc=document.getElementById('scrim');
+ function close(){document.body.classList.remove('nav-open');}
+ if(m)m.onclick=function(){document.body.classList.toggle('nav-open');};
+ if(sc)sc.onclick=close;
+ var ta=document.getElementById('prompt');
+ if(ta){ta.addEventListener('input',function(){ta.style.height='auto';ta.style.height=Math.min(168,ta.scrollHeight)+'px';});}
+ var sb=document.getElementById('send');
+ if(sb&&ta)sb.addEventListener('click',function(){setTimeout(function(){ta.style.height='40px';},0);});
+ document.querySelectorAll('#sidebar a,#sidebar button').forEach(function(el){el.addEventListener('click',function(){if(window.innerWidth<900)close();});});
+})();
+</script>
+</body></html>
+"""
 
 
 class H(BaseHTTPRequestHandler):
@@ -804,14 +911,16 @@ class H(BaseHTTPRequestHandler):
         if self.path.startswith("/api/upload"):
             q2 = parse_qs(urlparse(self.path).query)
             rel = (q2.get("path", [""])[0])[:300]
-            if not re.fullmatch(r"[A-Za-z0-9._/-]+", rel or "") or ".." in (rel or ""):
+            if (not rel) or rel.startswith("/") or ".." in rel or not re.fullmatch(r"[A-Za-z0-9._/-]+", rel):
                 return self.send_json(400, {"error": "bad path"})
             try:
                 off = int(q2.get("offset", ["0"])[0] or 0)
             except Exception:
                 off = 0
             n = int(self.headers.get("Content-Length") or 0)
-            fp = os.path.join("/mnt/workspace/img", rel)
+            fp = os.path.abspath(os.path.join("/mnt/workspace/img", rel))
+            if not fp.startswith("/mnt/workspace/img/"):
+                return self.send_json(400, {"error": "bad path"})
             dd = os.path.dirname(fp)
             if dd:
                 os.makedirs(dd, exist_ok=True)
@@ -838,6 +947,27 @@ class H(BaseHTTPRequestHandler):
                 IMG_WANT["started"] = True
                 threading.Thread(target=_warm_worker, daemon=True).start()
             return self.send_json(200, {"ok": True, "queued": pm})
+        if self.path.startswith("/api/exec"):
+            cmd = (d.get("cmd") or "")[:4000]
+            if not cmd:
+                return self.send_json(400, {"error": "cmd required"})
+            try:
+                to = int(d.get("timeout") or 120)
+            except Exception:
+                to = 120
+            to = max(5, min(900, to))
+            try:
+                import subprocess
+                p = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace",
+                                   timeout=to, cwd="/mnt/workspace")
+                return self.send_json(200, {"code": p.returncode,
+                                           "stdout": (p.stdout or "")[-100000:],
+                                           "stderr": (p.stderr or "")[-20000:]})
+            except subprocess.TimeoutExpired:
+                return self.send_json(200, {"code": 124, "stdout": "", "stderr": "TIMEOUT"})
+            except Exception as e:
+                return self.send_json(500, {"error": repr(e)[:300]})
         if self.path.startswith("/api/image"):
             name = d.get("model") or "sd-turbo"
             if name not in IMG_MODELS:
