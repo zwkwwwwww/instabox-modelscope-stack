@@ -123,7 +123,7 @@ UI_SYSTEM_PROMPT = """你可以在正文之后附加一个“智能界面”块�
 {"type":"chart","chart":"bar或line","title":"...","labels":["..."],"values":[1,2,3],"unit":"..."}
 {"type":"calculator","title":"...","fields":[{"key":"amount","label":"金额","value":100000}],"formula":"amount*0.1","unit":"元"}
 {"type":"flow","title":"...","steps":["第一步","第二步"]}
-不要输出 HTML，不要解释这个块。图表请求必须用 chart，贷款/分摊必须用 calculator；如果正文有数据表，优先把它转成组件而不是重复表格。用户说“随便画/画一个”时不要反问风格，直接给一个标题注明“示例”的 chart。"""
+不要输出 HTML，不要解释这个块。图表请求必须用 chart，贷款/分摊必须用 calculator；如果正文有数据表，优先把它转成组件而不是重复表格。用户说“随便画/画一个”时不要反问风格，直接给一个标题注明“示例”的 chart。数学公式用 $...$、$$...$$、\(...\) 或 \[...\]；矢量图用 ```svg 代码块输出完整 <svg viewBox="0 0 400 240">...</svg>，不要脚本、外链或 foreignObject。"""
 
 UI_PLANNER_PROMPT = """你是 UI 规格生成器。根据“问题”和“回答”，只输出一个 JSON 对象，不要输出解释、Markdown 代码围栏或 HTML。
 可用类型与严格格式：
@@ -633,6 +633,10 @@ button,input,select,textarea{font:inherit}
 .md a:hover{text-decoration:underline}
 .md hr{border:0;border-top:1px solid var(--border);margin:18px 0}
 .md .katex-display{overflow-x:auto;overflow-y:hidden}
+.svg-card{margin:14px 0;border:1px solid var(--border);border-radius:12px;background:var(--card);overflow:hidden;max-width:760px}
+.svg-bar{padding:8px 12px;border-bottom:1px solid var(--border);font:600 9px/1.2 var(--mono);letter-spacing:.08em;color:var(--accent)}
+.svg-wrap{padding:12px;overflow:auto;background:#fff}
+.svg-wrap svg{display:block;max-width:100%;height:auto;margin:0 auto}
 #log:empty::before{content:'M';display:flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:13px;background:var(--card);border:1px solid var(--border);color:var(--muted);font:700 18px var(--mono);margin:auto auto 14px}
 #log:empty::after{content:'开始一个新对话  ·  本地 CPU 推理';color:var(--dim);font-size:12px;letter-spacing:.02em;text-align:center;margin:0 auto auto}
 
@@ -1494,13 +1498,60 @@ function render(el,acc){
  const a=document.createElement('div');a.textContent=parts.text;el.appendChild(a);
  if(parts.pending||parts.specs.length){const p=document.createElement('div');p.className='iui-pending';p.textContent='智能视图生成中…';el.appendChild(p);}
 }
+function normalizeLatex(s){
+ var bs=String.fromCharCode(92);
+ return String(s||'').split(bs+'[').join('$$').split(bs+']').join('$$').split(bs+'(').join('$').split(bs+')').join('$');
+}
 function escapeForMd(s){return s.split('&').join('&amp;').split('<').join('&lt;');}
+function sanitizeSvg(text){
+ var doc;
+ try{doc=new DOMParser().parseFromString(String(text||""),"image/svg+xml");}catch(e){return null;}
+ if(!doc||doc.getElementsByTagName("parsererror").length)return null;
+ var root=doc.documentElement;
+ if(!root||root.localName!=="svg")return null;
+ var allowed={svg:1,g:1,path:1,circle:1,ellipse:1,rect:1,line:1,polyline:1,polygon:1,text:1,tspan:1,defs:1,linearGradient:1,radialGradient:1,stop:1,clipPath:1,mask:1,use:1,title:1,desc:1,marker:1,pattern:1};
+ var attrs={viewbox:1,width:1,height:1,x:1,y:1,x1:1,y1:1,x2:1,y2:1,cx:1,cy:1,r:1,rx:1,ry:1,d:1,points:1,fill:1,"fill-opacity":1,stroke:1,"stroke-width":1,"stroke-opacity":1,"stroke-linecap":1,"stroke-linejoin":1,"stroke-dasharray":1,transform:1,"font-size":1,"font-family":1,"font-weight":1,"text-anchor":1,"dominant-baseline":1,opacity:1,id:1,dx:1,dy:1,offset:1,"stop-color":1,"stop-opacity":1,"clip-path":1,mask:1};
+ var NS="http://www.w3.org/2000/svg",count=0;
+ function build(src){
+  count++;if(count>400)return null;
+  var tag=src.localName;if(!allowed[tag])return null;
+  var e=document.createElementNS(NS,tag);
+  for(var i=0;i<src.attributes.length;i++){
+   var a=src.attributes[i],n=a.name.toLowerCase(),v=a.value;
+   if(n==="href"||n==="xlink:href"){if(v.charAt(0)==="#")e.setAttribute("href",v);continue;}
+   if(!attrs[n])continue;
+   if(v.indexOf("javascript:")===0||v.indexOf("data:text/html")===0)continue;
+   e.setAttribute(a.name,v);
+  }
+  for(var ch=src.firstChild;ch;ch=ch.nextSibling){
+   if(ch.nodeType===3)e.appendChild(document.createTextNode(ch.nodeValue));
+   else if(ch.nodeType===1){var c=build(ch);if(c)e.appendChild(c);}
+  }
+  return e;
+ }
+ return build(root);
+}
+function renderSvgBlocks(root){
+ var codes=Array.from(root.querySelectorAll("pre code"));
+ for(var i=0;i<codes.length;i++){
+  var txt=(codes[i].textContent||"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&amp;/g,"&").trim();
+  if(txt.slice(0,4).toLowerCase()!=="<svg")continue;
+  var svg=sanitizeSvg(txt);if(!svg)continue;
+  var card=document.createElement("div");card.className="svg-card";
+  var bar=document.createElement("div");bar.className="svg-bar";bar.textContent="✦ 矢量图";
+  var wrap=document.createElement("div");wrap.className="svg-wrap";wrap.appendChild(svg);
+  card.appendChild(bar);card.appendChild(wrap);
+  var pre=codes[i].closest("pre");if(pre)pre.replaceWith(card);
+ }
+}
 function mdRender(el,ans){
+ ans=normalizeLatex(ans);
  let html;
  try{html=(window.marked&&typeof marked.parse==='function')?marked.parse(escapeForMd(ans)):null;}catch(e){html=null;}
  if(html===null){const a=document.createElement('div');a.textContent=ans;el.appendChild(a);return;}
  const a=document.createElement('div');a.className='md';a.innerHTML=html;el.appendChild(a);
- if(window.renderMathInElement){try{renderMathInElement(a,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});}catch(e){}}
+ if(window.renderMathInElement){try{renderMathInElement(a,{delimiters:[{left:'$$',right:'$$',display:true},{left:String.fromCharCode(92)+'[',right:String.fromCharCode(92)+']',display:true},{left:String.fromCharCode(92)+'(',right:String.fromCharCode(92)+')',display:false},{left:'$',right:'$',display:false}],throwOnError:false,strict:false});}catch(e){}}
+ renderSvgBlocks(a);
 }
 function renderFinal(el,acc,knownBlock,knownInline){
  let think='',ans=acc;
