@@ -430,17 +430,30 @@ button,input,select,textarea{font:inherit}
 #clearBtn:hover{background:#fff}
 #clearBtn svg{width:15px;height:15px}
 .side-label{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:0 8px;margin:2px 0 6px}
-.threads{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto}
-.thread{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--card);border:1px solid var(--border);color:var(--text);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side-scroll{display:flex;flex-direction:column;gap:6px;flex:1;min-height:0}
+.threads{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;flex:1}
+.t-group{display:flex;flex-direction:column;gap:4px}
+.t-group-label{font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim);padding:0 8px;margin:2px 0 3px}
+.thread{display:flex;align-items:center;gap:8px;padding:7px 8px 7px 10px;border-radius:8px;background:transparent;border:1px solid transparent;color:var(--text);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.thread:hover{background:var(--card);border-color:var(--border)}
 .thread .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);flex:0 0 auto}
-.thread{cursor:pointer}
 .thread.active{background:var(--card2);border-color:var(--border2)}
 .thread .t-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.thread .t-del{display:none;border:0;background:transparent;color:var(--dim);cursor:pointer;font-size:14px;line-height:1;padding:0 2px}
-.thread:hover .t-del{display:block}
+.thread .t-act{display:none;border:0;background:transparent;color:var(--dim);cursor:pointer;font-size:12px;line-height:1;padding:0 1px;flex:0 0 auto}
+.thread:hover .t-act{display:block}
+.thread.pinned .t-pin{display:block;color:var(--accent)}
+.thread .t-act:hover{color:var(--text)}
 .thread .t-del:hover{color:var(--danger)}
-.threads{max-height:38vh}
-@media(hover:none){.thread .t-del{display:block;opacity:.55}}
+.thread input.t-rename{flex:1;min-width:0;background:var(--card2);border:1px solid var(--border2);border-radius:5px;color:var(--text);font-family:var(--sans);font-size:12.5px;padding:1px 4px;outline:none}
+.t-empty{font-size:11.5px;color:var(--dim);padding:8px 9px}
+.side-search{position:relative}
+.side-search svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);width:13px;height:13px;color:var(--dim);pointer-events:none}
+#convSearch{width:100%;min-width:0;box-sizing:border-box;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 9px 7px 28px;outline:none}
+#convSearch:focus{border-color:var(--border2);background:var(--card2)}
+#convSearch::placeholder{color:var(--dim)}
+#convCount{color:var(--dim);font-weight:400;letter-spacing:0;margin-left:4px}
+@media(hover:none){.thread .t-act{display:none}.thread.active .t-act{display:block;opacity:.55}.thread.pinned .t-pin{display:block;opacity:.85}}
+@media(min-width:901px){#menuBtn{display:flex}body.side-hidden #sidebar{display:none}}
 .side-note{font-size:11px;color:var(--dim);padding:0 8px;line-height:1.5}
 .side-nav{margin-top:auto;display:flex;flex-direction:column;gap:2px;padding-top:8px;border-top:1px solid var(--border)}
 .side-nav a,.side-nav button{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;color:var(--muted);padding:8px 9px;border-radius:7px;font-size:12.5px;text-decoration:none;cursor:pointer;text-align:left}
@@ -452,7 +465,7 @@ button,input,select,textarea{font:inherit}
 /* ---------- main ---------- */
 #main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
 #bar{display:flex;align-items:center;gap:8px;padding:10px 22px;border-bottom:1px solid var(--border);background:rgba(15,16,18,.82);backdrop-filter:blur(10px);flex-wrap:wrap;min-height:54px}
-#menuBtn{display:none;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:8px;cursor:pointer}
+#menuBtn{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:8px;cursor:pointer}
 .ctl{appearance:none;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12.5px;outline:none;cursor:pointer;transition:border-color .15s,background .15s}
 .ctl:hover{border-color:var(--border2);background:var(--card2)}
 .ctl:focus{border-color:#4a4f58}
@@ -618,8 +631,12 @@ button,input,select,textarea{font:inherit}
    <div><div class="brand-name">Muse Chat</div><div class="brand-sub">魔搭 · 本地推理</div></div>
   </div>
   <button id="clearBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新对话</button>
-  <div>
-   <div class="side-label">会话</div>
+  <div class="side-search">
+   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+   <input id="convSearch" type="search" placeholder="搜索会话" autocomplete="off" aria-label="搜索会话" />
+  </div>
+  <div class="side-scroll">
+   <div class="side-label">会话<span id="convCount"></span></div>
    <div class="threads" id="threads"></div>
    <div class="side-note">每个会话独立上下文 · 本地保存</div>
   </div>
@@ -704,24 +721,81 @@ function saveConvs(){
  }
 }
 function saveHist(){var c=currentConv();if(!c)return;c.messages=history.slice(-80);c.updatedAt=Date.now();saveConvs();renderThreads();}
+function findConv(id){for(var i=0;i<convs.length;i++){if(convs[i].id===id)return convs[i];}return null;}
+function sortedConvs(){return convs.slice().sort(function(a,b){var pa=a.pinned?1:0,pb=b.pinned?1:0;if(pa!==pb)return pb-pa;return (b.updatedAt||0)-(a.updatedAt||0);});}
+function convBucket(c){
+ var ts=c.updatedAt||c.createdAt||0;
+ var n=new Date();var start=new Date(n.getFullYear(),n.getMonth(),n.getDate()).getTime();
+ if(ts>=start)return 0;
+ if(ts>=start-86400000)return 1;
+ if(ts>=start-6*86400000)return 2;
+ return 3;
+}
+function convMatches(c,q){
+ if(!q)return true;
+ if(String(c.title||'').toLowerCase().indexOf(q)>=0)return true;
+ var ms=c.messages||[];
+ for(var i=0;i<ms.length;i++){if(String(ms[i].content||'').toLowerCase().indexOf(q)>=0)return true;}
+ return false;
+}
+function togglePin(id){var c=findConv(id);if(!c)return;c.pinned=!c.pinned;saveConvs();renderThreads();}
+function startRename(id,titleEl){
+ var c=findConv(id);if(!c||!titleEl)return;
+ var old=String(c.title||'新对话');
+ var inp=document.createElement('input');inp.className='t-rename';inp.value=old;inp.maxLength=60;
+ titleEl.replaceWith(inp);inp.focus();inp.select();
+ var done=false;
+ function finish(save){
+  if(done)return;done=true;
+  var v=inp.value.trim();
+  if(save&&v){c.title=v.slice(0,60);saveConvs();}
+  renderThreads();
+ }
+ inp.addEventListener('click',function(ev){ev.stopPropagation();});
+ inp.addEventListener('dblclick',function(ev){ev.stopPropagation();});
+ inp.addEventListener('keydown',function(ev){
+  if(ev.key==='Enter'){ev.preventDefault();finish(true);}
+  else if(ev.key==='Escape'){ev.preventDefault();finish(false);}
+ });
+ inp.addEventListener('blur',function(){finish(true);});
+}
+function threadRow(c){
+ var d=document.createElement('div');
+ d.className='thread'+(c.id===currentId?' active':'')+(c.pinned?' pinned':'');
+ d.setAttribute('data-id',c.id);
+ d.title=(c.updatedAt||c.createdAt)?new Date(c.updatedAt||c.createdAt).toLocaleString():'';
+ var dot=document.createElement('span');dot.className='dot';
+ var t=document.createElement('span');t.className='t-title';t.textContent=c.title||'新对话';
+ function act(cls,txt,tip,fn){var b=document.createElement('button');b.className='t-act '+cls;b.textContent=txt;b.title=tip;b.onclick=function(ev){ev.stopPropagation();fn();};return b;}
+ var pin=act('t-pin',c.pinned?'★':'☆',c.pinned?'取消置顶':'置顶',function(){togglePin(c.id);});
+ var ren=act('t-ren','✎','重命名',function(){startRename(c.id,d.querySelector('.t-title'));});
+ var del=act('t-del','×','删除会话',function(){deleteConv(c.id);});
+ t.ondblclick=function(ev){ev.stopPropagation();startRename(c.id,t);};
+ d.appendChild(dot);d.appendChild(t);d.appendChild(pin);d.appendChild(ren);d.appendChild(del);
+ d.onclick=function(){switchConv(c.id);};
+ return d;
+}
+function addThreadGroup(box,label,items){
+ if(!items.length)return;
+ var g=document.createElement('div');g.className='t-group';
+ var l=document.createElement('div');l.className='t-group-label';l.textContent=label;
+ g.appendChild(l);
+ for(var i=0;i<items.length;i++)g.appendChild(threadRow(items[i]));
+ box.appendChild(g);
+}
 function renderThreads(){
  var box=$('threads');if(!box)return;
  box.innerHTML='';
- var list=convs.slice().sort(function(a,b){return (b.updatedAt||0)-(a.updatedAt||0);});
- for(var i=0;i<list.length;i++){
-  (function(c){
-   var d=document.createElement('div');
-   d.className='thread'+(c.id===currentId?' active':'');
-   d.setAttribute('data-id',c.id);
-   var dot=document.createElement('span');dot.className='dot';
-   var t=document.createElement('span');t.className='t-title';t.textContent=c.title||'新对话';
-   var x=document.createElement('button');x.className='t-del';x.textContent='×';x.title='删除会话';
-   x.onclick=function(ev){ev.stopPropagation();deleteConv(c.id);};
-   d.appendChild(dot);d.appendChild(t);d.appendChild(x);
-   d.onclick=function(){switchConv(c.id);};
-   box.appendChild(d);
-  })(list[i]);
- }
+ var cnt=$('convCount');if(cnt)cnt.textContent=convs.length?String(convs.length):'';
+ var input=$('convSearch');var q=input?input.value.trim().toLowerCase():'';
+ var list=q?sortedConvs().filter(function(c){return convMatches(c,q);}):sortedConvs();
+ if(!list.length){var e=document.createElement('div');e.className='t-empty';e.textContent=q?'没有匹配的会话':'还没有会话';box.appendChild(e);return;}
+ if(q){addThreadGroup(box,'搜索结果 · '+list.length,list);return;}
+ addThreadGroup(box,'置顶',list.filter(function(c){return c.pinned;}));
+ var gs=[[],[],[],[]];
+ for(var i=0;i<list.length;i++){if(list[i].pinned)continue;gs[convBucket(list[i])].push(list[i]);}
+ var labels=['今天','昨天','最近 7 天','更早'];
+ for(var j=0;j<4;j++)addThreadGroup(box,labels[j],gs[j]);
 }
 function appendToConv(id,msg){
  var c=null;for(var i=0;i<convs.length;i++){if(convs[i].id===id){c=convs[i];break;}}
@@ -744,8 +818,9 @@ function removeLastUser(id){
  renderThreads();
 }
 function newConv(){
- var c={id:uid(),title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]};
+ var c={id:uid(),title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[],pinned:false};
  convs.unshift(c);currentId=c.id;history=[];
+ var cs=$('convSearch');if(cs)cs.value='';
  saveConvs();renderThreads();
  $('log').innerHTML='';ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';
  var p=$('prompt');if(p)p.focus();
@@ -766,13 +841,14 @@ function deleteConv(id){
  }
  convs=convs.filter(function(c){return c.id!==id;});
  if(!convs.length){newConv();return;}
- currentId=convs[0].id;history=(currentConv().messages||[]).slice();
+ var next=sortedConvs()[0];currentId=next.id;history=(next.messages||[]).slice();
  saveConvs();renderThreads();
  $('log').innerHTML='';ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';
  restoreHist();
 }
 function initConvs(){
  try{var raw=localStorage.getItem(CONV_KEY);if(raw){var d=JSON.parse(raw);convs=Array.isArray(d.conversations)?d.conversations:[];currentId=d.currentId||null;}}catch(e){}
+ for(var ci=0;ci<convs.length;ci++){if(!Array.isArray(convs[ci].messages))convs[ci].messages=[];convs[ci].pinned=!!convs[ci].pinned;}
  if(!convs.length){
   var old=[];try{old=JSON.parse(localStorage.getItem('muse_hist')||'[]');}catch(e){}
   if(Array.isArray(old)&&old.length){
@@ -942,6 +1018,20 @@ async function send(){
 $('send').onclick=send;
 $('prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 $('clearBtn').onclick=function(){newConv();};
+(function(){
+ var cs=$('convSearch');
+ if(cs){
+  cs.addEventListener('input',renderThreads);
+  cs.addEventListener('keydown',function(e){if(e.key==='Escape'){cs.value='';renderThreads();cs.blur();}});
+ }
+ document.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&String(e.key).toLowerCase()==='k'){
+   e.preventDefault();
+   if(window.innerWidth>=900&&document.body.classList.contains('side-hidden')){document.body.classList.remove('side-hidden');try{localStorage.setItem('muse_side_hidden','0');}catch(x){}}
+   var s=$('convSearch');if(s){s.focus();s.select();}
+  }
+ });
+})();
 $('setBtn').onclick=async function(){
  $('setModal').style.display='flex';
  try{const j=await (await fetch('api/settings')).json();const st=j.settings||{};
@@ -991,14 +1081,23 @@ initConvs();
 (function(){
  var m=document.getElementById('menuBtn'),sc=document.getElementById('scrim');
  function close(){document.body.classList.remove('nav-open');}
- if(m)m.onclick=function(){document.body.classList.toggle('nav-open');};
+ try{if(localStorage.getItem('muse_side_hidden')==='1')document.body.classList.add('side-hidden');}catch(e){}
+ if(m)m.onclick=function(){
+  if(window.innerWidth>=900){var h=document.body.classList.toggle('side-hidden');try{localStorage.setItem('muse_side_hidden',h?'1':'0');}catch(e){}}
+  else document.body.classList.toggle('nav-open');
+ };
  if(sc)sc.onclick=close;
  var ta=document.getElementById('prompt');
  if(ta){ta.addEventListener('input',function(){ta.style.height='auto';ta.style.height=Math.min(168,ta.scrollHeight)+'px';});}
  var sb=document.getElementById('send');
  if(sb&&ta)sb.addEventListener('click',function(){setTimeout(function(){ta.style.height='40px';},0);});
  document.querySelectorAll('#sidebar a,#sidebar button').forEach(function(el){el.addEventListener('click',function(){if(window.innerWidth<900)close();});});
- var th=document.getElementById('threads');if(th)th.addEventListener('click',function(){if(window.innerWidth<900)close();});
+ var th=document.getElementById('threads');
+ if(th)th.addEventListener('click',function(ev){
+  if(window.innerWidth>=900)return;
+  if(ev.target&&(ev.target.closest('.t-act')||ev.target.closest('input')))return;
+  close();
+ });
 })();
 </script>
 </body></html>
