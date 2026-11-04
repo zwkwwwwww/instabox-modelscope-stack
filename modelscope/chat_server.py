@@ -648,7 +648,7 @@ button,input,select,textarea{font:inherit}
 #prompt::placeholder{color:var(--dim)}
 #send{width:36px;height:36px;flex:0 0 36px;border:0;border-radius:10px;background:var(--text);color:#0b0c0e;font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,transform .1s}
 #send:hover{background:#fff}
-#send:active{transform:scale(.96)}#send:disabled{opacity:.45;cursor:default;transform:none}
+#send:active{transform:scale(.96)}#send:disabled{opacity:.45;cursor:default;transform:none}#send.stop{background:var(--danger);color:#0b0c0e}
 .hint{max-width:900px;margin:7px auto 0;font:10.5px/1.4 var(--mono);color:var(--dim);display:flex;justify-content:space-between;gap:10px}
 
 /* ---------- modals ---------- */
@@ -827,7 +827,7 @@ const $=id=>document.getElementById(id);
 let models=[],loaded=null,loading=null;
 let history=[];
 const CONV_KEY='muse_convs_v1';
-let convs=[],currentId=null,lastUserPrompt='',pendingStreams={},sending=false;
+let convs=[],currentId=null,lastUserPrompt='',pendingStreams={},sending=false,currentAbort=null;
 function uid(){return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function makeTitle(s){
  s=String(s||'');
@@ -1651,7 +1651,8 @@ function renderCtx(extraChars){
 async function send(){
  if(sending){setStatus('⏳ 当前回答还在生成，请稍候再发送');return;}
  const model=$('model').value,p=$('prompt').value.trim();if(!p)return;
- sending=true;var sendBtn=$('send');if(sendBtn)sendBtn.disabled=true;
+ sending=true;currentAbort=new AbortController();
+ var sendBtn=$('send');if(sendBtn){sendBtn.textContent='■';sendBtn.title='停止生成';sendBtn.classList.add('stop');}
  lastUserPrompt=p;const convId=currentId;
  $('prompt').value='';addMsg('me',p);
  appendToConv(convId,{role:'user',content:p});
@@ -1660,9 +1661,10 @@ async function send(){
  const reqMsgs=history.filter(function(m){return !(m.role==='assistant'&&m.pending);}).map(function(m){return {role:m.role,content:plainForModel(m)};});
  try{
   await ensure(model);
+  if(currentAbort&&currentAbort.signal.aborted)throw new Error('已停止');
   try{const q=await (await fetch('api/queue')).json(); if(q.busy||q.waiting>0){addMsg('sys','⏳ 服务器正忙，请求已排队'+(q.waiting?('（前面还有 '+q.waiting+' 个）'):'')+'，请耐心等待…');}}catch(e){}
   const el=addMsg('ai','');
-  const resp=await jpost('api/chat',{model:model,messages:reqMsgs,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10),intelligent_ui:true});
+  const resp=await fetch('api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:model,messages:reqMsgs,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10),intelligent_ui:true}),signal:currentAbort.signal});
   if(!resp.ok){const err='请求失败：'+await resp.text();el.textContent=err;removeAssistant(convId,aid);removeLastUser(convId);delete pendingStreams[aid];return;}
   const reader=resp.body.getReader(),dec=new TextDecoder();
   let acc='',buf='';
@@ -1716,15 +1718,23 @@ async function send(){
   delete pendingStreams[aid];
   if(currentId===convId&&!el.isConnected){const e=addMsg('ai','');renderFinal(e,finalText,uiBlock,uiInline);}
  }catch(e){
+  var stopped=(e&&(e.name==='AbortError'||String(e.message||'').indexOf('已停止')>=0));
   var ps2=pendingStreams[aid];
   if(ps2){
-   if(!String(ps2.acc||'').trim()){removeAssistant(convId,aid);removeLastUser(convId);}
-   else{updateAssistant(convId,aid,ps2.acc||'',{pending:false,interrupted:true});}
+   if(stopped){
+    if(!String(ps2.acc||'').trim())removeAssistant(convId,aid);
+    else updateAssistant(convId,aid,ps2.acc||'',{pending:false,interrupted:true});
+   }else if(!String(ps2.acc||'').trim()){
+    removeAssistant(convId,aid);removeLastUser(convId);
+   }else{
+    updateAssistant(convId,aid,ps2.acc||'',{pending:false,interrupted:true});
+   }
    delete pendingStreams[aid];
   }
-  if(currentId===convId)addMsg('sys','出错：'+e.message);
+  if(currentId===convId)addMsg('sys',stopped?'已停止生成':'出错：'+e.message);
  } finally {
-  sending=false;var sb2=$('send');if(sb2)sb2.disabled=false;
+  sending=false;currentAbort=null;
+  var sb2=$('send');if(sb2){sb2.textContent='↑';sb2.title='发送';sb2.disabled=false;sb2.classList.remove('stop');}
  }
 }
 window.addEventListener('beforeunload',function(){
@@ -1733,7 +1743,7 @@ window.addEventListener('beforeunload',function(){
   if(ps)updateAssistant(ps.convId,mid,ps.acc||'',{pending:true});
  }
 });
-$('send').onclick=send;
+$('send').onclick=function(){if(sending){if(currentAbort)currentAbort.abort();return;}send();};
 $('prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 $('clearBtn').onclick=function(){newConv();};
 (function(){
