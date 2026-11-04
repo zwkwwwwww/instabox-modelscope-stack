@@ -433,6 +433,14 @@ button,input,select,textarea{font:inherit}
 .threads{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto}
 .thread{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--card);border:1px solid var(--border);color:var(--text);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thread .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);flex:0 0 auto}
+.thread{cursor:pointer}
+.thread.active{background:var(--card2);border-color:var(--border2)}
+.thread .t-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thread .t-del{display:none;border:0;background:transparent;color:var(--dim);cursor:pointer;font-size:14px;line-height:1;padding:0 2px}
+.thread:hover .t-del{display:block}
+.thread .t-del:hover{color:var(--danger)}
+.threads{max-height:38vh}
+@media(hover:none){.thread .t-del{display:block;opacity:.55}}
 .side-note{font-size:11px;color:var(--dim);padding:0 8px;line-height:1.5}
 .side-nav{margin-top:auto;display:flex;flex-direction:column;gap:2px;padding-top:8px;border-top:1px solid var(--border)}
 .side-nav a,.side-nav button{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;color:var(--muted);padding:8px 9px;border-radius:7px;font-size:12.5px;text-decoration:none;cursor:pointer;text-align:left}
@@ -612,8 +620,8 @@ button,input,select,textarea{font:inherit}
   <button id="clearBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新对话</button>
   <div>
    <div class="side-label">会话</div>
-   <div class="threads"><div class="thread"><span class="dot"></span>当前对话</div></div>
-   <div class="side-note">本地保存最近 80 条消息</div>
+   <div class="threads" id="threads"></div>
+   <div class="side-note">每个会话独立上下文 · 本地保存</div>
   </div>
   <nav class="side-nav">
    <a href="img" target="_blank" id="imgLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>生图</a>
@@ -676,8 +684,110 @@ button,input,select,textarea{font:inherit}
 const $=id=>document.getElementById(id);
 let models=[],loaded=null,loading=null;
 let history=[];
-function saveHist(){try{localStorage.setItem('muse_hist',JSON.stringify(history.slice(-80)));}catch(e){}}
-function loadHist(){try{const h=JSON.parse(localStorage.getItem('muse_hist')||'[]');return Array.isArray(h)?h:[];}catch(e){return [];}}
+const CONV_KEY='muse_convs_v1';
+let convs=[],currentId=null;
+function uid(){return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function makeTitle(s){
+ s=String(s||'');
+ s=s.split(String.fromCharCode(10)).join(' ').split(String.fromCharCode(13)).join(' ').split(String.fromCharCode(9)).join(' ');
+ s=s.replace(/ +/g,' ').trim();
+ return s?s.slice(0,26):'新对话';
+}
+function currentConv(){for(var i=0;i<convs.length;i++){if(convs[i].id===currentId)return convs[i];}return null;}
+function saveConvs(){
+ var data={conversations:convs,currentId:currentId};
+ try{localStorage.setItem(CONV_KEY,JSON.stringify(data));}catch(e){
+  var cur=currentConv();
+  var rest=convs.filter(function(c){return c.id!==currentId;}).slice(0,9);
+  convs=(cur?[cur]:[]).concat(rest);
+  try{localStorage.setItem(CONV_KEY,JSON.stringify({conversations:convs,currentId:currentId}));}catch(e2){}
+ }
+}
+function saveHist(){var c=currentConv();if(!c)return;c.messages=history.slice(-80);c.updatedAt=Date.now();saveConvs();renderThreads();}
+function renderThreads(){
+ var box=$('threads');if(!box)return;
+ box.innerHTML='';
+ var list=convs.slice().sort(function(a,b){return (b.updatedAt||0)-(a.updatedAt||0);});
+ for(var i=0;i<list.length;i++){
+  (function(c){
+   var d=document.createElement('div');
+   d.className='thread'+(c.id===currentId?' active':'');
+   d.setAttribute('data-id',c.id);
+   var dot=document.createElement('span');dot.className='dot';
+   var t=document.createElement('span');t.className='t-title';t.textContent=c.title||'新对话';
+   var x=document.createElement('button');x.className='t-del';x.textContent='×';x.title='删除会话';
+   x.onclick=function(ev){ev.stopPropagation();deleteConv(c.id);};
+   d.appendChild(dot);d.appendChild(t);d.appendChild(x);
+   d.onclick=function(){switchConv(c.id);};
+   box.appendChild(d);
+  })(list[i]);
+ }
+}
+function appendToConv(id,msg){
+ var c=null;for(var i=0;i<convs.length;i++){if(convs[i].id===id){c=convs[i];break;}}
+ if(!c)return;
+ c.messages=c.messages||[];
+ c.messages.push(msg);
+ c.messages=c.messages.slice(-80);
+ c.updatedAt=Date.now();
+ if((!c.title||c.title==='新对话')&&msg.role==='user'){c.title=makeTitle(msg.content);}
+ saveConvs();
+ if(currentId===id){history=c.messages.slice();}
+ renderThreads();
+}
+function removeLastUser(id){
+ var c=null;for(var i=0;i<convs.length;i++){if(convs[i].id===id){c=convs[i];break;}}
+ if(!c)return;
+ if(c.messages&&c.messages.length)c.messages.pop();
+ c.updatedAt=Date.now();saveConvs();
+ if(currentId===id){history=c.messages.slice();}
+ renderThreads();
+}
+function newConv(){
+ var c={id:uid(),title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[]};
+ convs.unshift(c);currentId=c.id;history=[];
+ saveConvs();renderThreads();
+ $('log').innerHTML='';ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';
+ var p=$('prompt');if(p)p.focus();
+}
+function switchConv(id){
+ if(id===currentId)return;
+ var c=null;for(var i=0;i<convs.length;i++){if(convs[i].id===id){c=convs[i];break;}}
+ if(!c)return;
+ currentId=id;history=(c.messages||[]).slice();saveConvs();
+ $('log').innerHTML='';ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';
+ renderThreads();restoreHist();
+}
+function deleteConv(id){
+ if(!confirm('删除这个会话？'))return;
+ if(currentId!==id){
+  convs=convs.filter(function(c){return c.id!==id;});
+  saveConvs();renderThreads();return;
+ }
+ convs=convs.filter(function(c){return c.id!==id;});
+ if(!convs.length){newConv();return;}
+ currentId=convs[0].id;history=(currentConv().messages||[]).slice();
+ saveConvs();renderThreads();
+ $('log').innerHTML='';ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';
+ restoreHist();
+}
+function initConvs(){
+ try{var raw=localStorage.getItem(CONV_KEY);if(raw){var d=JSON.parse(raw);convs=Array.isArray(d.conversations)?d.conversations:[];currentId=d.currentId||null;}}catch(e){}
+ if(!convs.length){
+  var old=[];try{old=JSON.parse(localStorage.getItem('muse_hist')||'[]');}catch(e){}
+  if(Array.isArray(old)&&old.length){
+   var u=null;for(var i=0;i<old.length;i++){if(old[i]&&old[i].role==='user'){u=old[i];break;}}
+   convs=[{id:uid(),title:makeTitle(u?u.content:'历史对话'),createdAt:Date.now(),updatedAt:Date.now(),messages:old.slice(-80)}];
+   currentId=convs[0].id;
+  }
+ }
+ saveConvs();
+ if(!convs.length){newConv();return;}
+ var found=false;for(var i=0;i<convs.length;i++){if(convs[i].id===currentId){found=true;break;}}
+ if(!found){currentId=convs[0].id;saveConvs();}
+ var c=currentConv();history=(c.messages||[]).slice();
+ renderThreads();restoreHist();
+}
 function restoreHist(){for(const m of history){if(m.role==='user')addMsg('me',m.content);else if(m.role==='assistant'){const el=addMsg('ai','');renderFinal(el,m.content);}}}
 function addMsg(kind,text){const d=document.createElement('div');d.className='msg '+kind;d.textContent=text;$('log').appendChild(d);$('log').scrollTop=$('log').scrollHeight;return d;}
 async function jget(u){const r=await fetch(u,{cache:'no-store'});return r.json();}
@@ -796,14 +906,16 @@ function renderCtx(extraChars){
 }
 async function send(){
  const model=$('model').value,p=$('prompt').value.trim();if(!p)return;
+ const convId=currentId;
  $('prompt').value='';addMsg('me',p);
- history.push({role:'user',content:p});saveHist();
+ appendToConv(convId,{role:'user',content:p});
+ const reqMsgs=history.slice();
  try{
   await ensure(model);
   try{const q=await (await fetch('api/queue')).json(); if(q.busy||q.waiting>0){addMsg('sys','⏳ 服务器正忙，请求已排队'+(q.waiting?('（前面还有 '+q.waiting+' 个）'):'')+'，请耐心等待…');}}catch(e){}
   const el=addMsg('ai','');
-  const resp=await jpost('api/chat',{model:model,messages:history,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10)});
-  if(!resp.ok){el.textContent='请求失败：'+await resp.text();history.pop();saveHist();return;}
+  const resp=await jpost('api/chat',{model:model,messages:reqMsgs,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10)});
+  if(!resp.ok){el.textContent='请求失败：'+await resp.text();removeLastUser(convId);return;}
   const reader=resp.body.getReader(),dec=new TextDecoder();
   let acc='',buf='';
   while(true){
@@ -813,22 +925,23 @@ async function send(){
    while((i=buf.indexOf('\n\n'))>=0){
     const line=buf.slice(0,i).trim();buf=buf.slice(i+2);
     if(line.startsWith('data: ')){const data=line.slice(6);if(data==='[DONE]')continue;
-     try{const j=JSON.parse(data);if(j.meta){setCtxMeta(j.meta);continue;}if(j.delta){acc+=j.delta;render(el,acc);$('log').scrollTop=$('log').scrollHeight;}}catch(e){}}
+     try{const j=JSON.parse(data);if(j.meta){if(currentId===convId)setCtxMeta(j.meta);continue;}if(j.delta){acc+=j.delta;render(el,acc);$('log').scrollTop=$('log').scrollHeight;}}catch(e){}}
    }
   }
-  renderCtx(acc.length);
+  if(currentId===convId)renderCtx(acc.length);
   renderFinal(el,acc);
   let clean=acc;
   const ct=acc.indexOf('</think>');
   if(ct>=0){clean=acc.slice(ct+8);}
   clean=clean.split('<think>').join('').trim();
   if(!clean){clean=acc;}
-  history.push({role:'assistant',content:clean});saveHist();
- }catch(e){addMsg('sys','出错：'+e.message);}
+  appendToConv(convId,{role:'assistant',content:clean});
+  if(currentId===convId&&!el.isConnected){const e=addMsg('ai','');renderFinal(e,acc);}
+ }catch(e){if(currentId===convId)addMsg('sys','出错：'+e.message);}
 }
 $('send').onclick=send;
 $('prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
-$('clearBtn').onclick=function(){history=[];saveHist();$('log').innerHTML='';ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';addMsg('sys','对话已清空，可以开始新话题');};
+$('clearBtn').onclick=function(){newConv();};
 $('setBtn').onclick=async function(){
  $('setModal').style.display='flex';
  try{const j=await (await fetch('api/settings')).json();const st=j.settings||{};
@@ -872,7 +985,7 @@ $('keyRotate').onclick=async function(){
  if(j.key){$('keyVal').value=j.key;addMsg('sys','API Key 已重置，请复制新 Key');}
  else{addMsg('sys','重置失败：'+(j.error||'未知错误'));}
 };
-history=loadHist();restoreHist();
+initConvs();
 </script>
 <script>
 (function(){
@@ -885,6 +998,7 @@ history=loadHist();restoreHist();
  var sb=document.getElementById('send');
  if(sb&&ta)sb.addEventListener('click',function(){setTimeout(function(){ta.style.height='40px';},0);});
  document.querySelectorAll('#sidebar a,#sidebar button').forEach(function(el){el.addEventListener('click',function(){if(window.innerWidth<900)close();});});
+ var th=document.getElementById('threads');if(th)th.addEventListener('click',function(){if(window.innerWidth<900)close();});
 })();
 </script>
 </body></html>
