@@ -495,7 +495,12 @@ button,input,select,textarea{font:inherit}
 .msg.ai::before{content:'ASSISTANT'}
 .msg.sys{align-self:center;max-width:92%;border:1px solid var(--border);background:var(--panel);border-radius:999px;padding:5px 12px;margin:8px 0;color:var(--dim);font-size:11.5px;text-align:center}
 .msg.sys::before{display:none}
-.think{color:var(--dim);font:12.5px/1.65 var(--mono);border-left:2px solid var(--border2);padding:8px 0 8px 12px;margin:0 0 12px;white-space:pre-wrap;max-height:260px;overflow:auto}
+.think{color:var(--dim);font:12.5px/1.65 var(--mono);border-left:2px solid var(--border2);padding:8px 0 8px 12px;margin:0 0 12px}
+.think>summary{cursor:pointer;list-style:none;color:var(--muted);user-select:none;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.think>summary::-webkit-details-marker{display:none}
+.think>summary::before{content:'▸';display:inline-block;color:var(--dim);transition:transform .15s}
+.think[open]>summary::before{transform:rotate(90deg)}
+.think-body{white-space:pre-wrap;max-height:260px;overflow:auto;margin-top:8px;padding-right:4px}
 .md{line-height:1.75;font-size:14.5px}
 .md h1,.md h2,.md h3,.md h4{margin:18px 0 8px;line-height:1.3;font-weight:650;letter-spacing:-.01em}
 .md h1{font-size:1.42em}.md h2{font-size:1.24em}.md h3{font-size:1.1em}
@@ -936,6 +941,14 @@ async function ensure(name){
 }
 $('model').onchange=function(){progHoldUntil=0;setProg(false,0,'');ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';applyThinkLevels();};
 $('loadBtn').onclick=()=>{const m=$('model').value;ensure(m).then(()=>addMsg('sys','模型已就绪')).catch(err=>addMsg('sys','加载失败：'+err.message));};
+function thinkBlock(text,label,open,final){
+ var d=document.createElement('details');d.className='think';if(open)d.open=true;
+ var s=document.createElement('summary');s.textContent=label;
+ var b=document.createElement('div');b.className='think-body';b.textContent=text;
+ d.appendChild(s);d.appendChild(b);
+ if(final){d.addEventListener('toggle',function(){s.textContent='💭 思考 · '+text.length+' 字'+(d.open?'（点击收起）':'（点击展开）');});}
+ return d;
+}
 function render(el,acc){
  let think='',ans=acc,thinking=false;
  const t0=acc.indexOf('<think>');
@@ -950,7 +963,7 @@ function render(el,acc){
   think=acc;ans='';thinking=true;
  }
  el.innerHTML='';
- if(think){const d=document.createElement('div');d.className='think';d.textContent='💭 '+(thinking?'思考中…':'思考')+String.fromCharCode(10)+think;el.appendChild(d);}
+ if(think){el.appendChild(thinkBlock(think,'💭 '+(thinking?'思考中…':'思考'),true,false));}
  const a=document.createElement('div');a.textContent=ans;el.appendChild(a);
 }
 function escapeForMd(s){return s.split('&').join('&amp;').split('<').join('&lt;');}
@@ -966,7 +979,7 @@ function renderFinal(el,acc){
  const t1=acc.indexOf('</think>');
  if(t1>=0){const t0=acc.lastIndexOf('<think>',t1);think=acc.slice(t0>=0?t0+7:0,t1);ans=acc.slice(t1+8);}
  el.innerHTML='';
- if(think){const d=document.createElement('div');d.className='think';d.textContent='💭 思考'+String.fromCharCode(10)+think;el.appendChild(d);}
+ if(think){el.appendChild(thinkBlock(think,'💭 思考 · '+think.length+' 字（点击展开）',false,true));}
  mdRender(el,ans);
 }
 let ctxMeta=null;
