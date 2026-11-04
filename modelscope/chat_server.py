@@ -8,27 +8,27 @@ from urllib.parse import urlparse, parse_qs
 MODELS = {
     "qwen3-30b-a3b": {"path": "/mnt/workspace/gguf/30b/Qwen3-30B-A3B-Q4_K_M.gguf",
                       "label": "Qwen3-30B-A3B · 约7 tok/s",
-                      "think_levels": ["off", "low", "medium", "high"],
-                      "think_note": "低/中为软引导"},
+                      "think_levels": ["off", "high"],
+                      "think_note": "关/开（硬开关）"},
     "qwen3.8-27b":   {"path": "/mnt/workspace/gguf/27b/Qwen3.8-27B-Q4_K_M.gguf",
                       "label": "Qwen3.8-27B · 约3.3 tok/s · 最强",
                       "think_levels": ["high"],
-                      "think_note": "默认深度思考，暂不支持关闭/调低"},
+                      "think_note": "固定深度思考（无硬开关）"},
     "qwen3-4b":      {"path": "/mnt/workspace/gguf/4b/Qwen3-4B-Q4_K_M.gguf",
                       "label": "Qwen3-4B · 约15-20 tok/s · 快",
-                      "think_levels": ["off", "low", "medium", "high"],
-                      "think_note": "低/中为软引导"},
+                      "think_levels": ["off", "high"],
+                      "think_note": "关/开（硬开关）"},
     "qwen3-1.7b":    {"path": "/mnt/workspace/gguf/17b/Qwen3-1.7B-Q4_K_M.gguf",
                       "label": "Qwen3-1.7B · 约30 tok/s · 秒回",
-                      "think_levels": ["off", "low", "medium", "high"],
-                      "think_note": "1.7B 档位不稳定"},
+                      "think_levels": ["off", "high"],
+                      "think_note": "关/开（硬开关，开档可能不稳定）"},
     "minicpm4.1-8b": {"path": "/mnt/workspace/gguf/minicpm41/MiniCPM4.1-8B-Q4_K_M.gguf",
                       "label": "MiniCPM4.1-8B · 约6-9 tok/s · 高效",
                       "think_levels": ["off", "high"],
-                      "think_note": "仅支持关/开，低/中按高处理"},
+                      "think_note": "关/开（硬开关）"},
 }
 
-DEFAULT_THINK_LEVELS = ("off", "low", "medium", "high")
+DEFAULT_THINK_LEVELS = ("off", "high")
 
 
 def think_levels_for(name):
@@ -427,6 +427,7 @@ button,input,select,textarea{font:inherit}
 .ctl{appearance:none;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12.5px;outline:none;cursor:pointer;transition:border-color .15s,background .15s}
 .ctl:hover{border-color:var(--border2);background:var(--card2)}
 .ctl:focus{border-color:#4a4f58}
+#thinkLevel:disabled{opacity:.55;cursor:not-allowed}
 #loadBtn{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 11px;font-size:12.5px;cursor:pointer}
 #loadBtn:hover:not(:disabled){background:var(--card2);border-color:var(--border2)}
 #loadBtn:disabled{opacity:.45;cursor:default}
@@ -606,7 +607,7 @@ button,input,select,textarea{font:inherit}
    <button id="menuBtn" title="菜单"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
    <select id="model" class="ctl" title="模型"></select>
    <button id="loadBtn">加载模型</button>
-   <select id="thinkLevel" class="ctl" title="思考强度"><option value="off">思考：关</option><option value="low">思考：低</option><option value="medium">思考：中</option><option value="high" selected>思考：高</option></select>
+   <select id="thinkLevel" class="ctl" title="思考开关"><option value="off">思考：关</option><option value="high" selected>思考：开</option></select>
    <select id="maxTok" class="ctl" title="最大输出长度"><option value="1024">1024 tokens</option><option value="2048">2048 tokens</option><option value="4096" selected>4096 tokens</option><option value="8192">8192 tokens</option></select>
    <span id="ctxInfo" title="上下文占用估算（由服务端预算裁剪后计算）">上下文 ≈ —</span>
    <span id="status">连接中…</span>
@@ -637,7 +638,7 @@ button,input,select,textarea{font:inherit}
 <div id="setModal" class="modal"><div id="setBox">
  <h3>设置</h3>
  <p>修改后点「保存设置」立即生效</p>
- <div class="field"><label>默认思考强度</label><select id="setThink"><option value="off">关</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></div>
+ <div class="field"><label>默认思考强度</label><select id="setThink"><option value="off">关</option><option value="high">开</option></select></div>
  <div class="field"><label>默认输出长度</label><select id="setMaxTok"><option value="1024">1024</option><option value="2048">2048</option><option value="4096">4096</option><option value="8192">8192</option></select></div>
  <div class="field"><label>上下文长度 <small>(下次加载生效)</small></label><select id="setCtx"><option value="8192">8K</option><option value="16384">16K</option><option value="24576">24K</option><option value="32768">32K</option></select></div>
  <div class="field"><label>队列上限</label><input id="setQueue" type="number" min="1" max="32" /></div>
@@ -668,6 +669,7 @@ function applyThinkLevels(){
  const levels=(m&&m.think_levels)||['off','low','medium','high'];
  const note=(m&&m.think_note)||'';
  const sel=$('thinkLevel');
+ sel.disabled=(levels.length<=1);
  for(const o of sel.options){
   if(!o.dataset.base)o.dataset.base=o.textContent;
   if(levels.indexOf(o.value)<0){o.disabled=true;o.textContent=o.dataset.base+'（不可用）';}
@@ -809,7 +811,7 @@ $('clearBtn').onclick=function(){history=[];saveHist();$('log').innerHTML='';ctx
 $('setBtn').onclick=async function(){
  $('setModal').style.display='flex';
  try{const j=await (await fetch('api/settings')).json();const st=j.settings||{};
-  $('setThink').value=st.think_level||'high';
+  $('setThink').value=(st.think_level==='off')?'off':'high';
   $('setMaxTok').value=String(st.max_tokens_default||4096);
   $('setCtx').value=String(st.ctx_size||16384);
   $('setQueue').value=st.max_queue||8;
@@ -829,7 +831,7 @@ $('setPwSave').onclick=async function(){
  if(r.ok){addMsg('sys','✅ 密码已修改，下次登录用新密码');$('setPw').value='';}
  else{addMsg('sys','修改失败：'+(await r.text()).slice(0,80));}
 };
-fetch('api/settings').then(function(r){return r.json();}).then(function(j){if(j.settings){if(j.settings.think_level){$('thinkLevel').value=j.settings.think_level;}if(j.settings.max_tokens_default){$('maxTok').value=String(j.settings.max_tokens_default);}}}).catch(function(){});
+fetch('api/settings').then(function(r){return r.json();}).then(function(j){if(j.settings){$('thinkLevel').value=(j.settings.think_level==='off')?'off':'high';if(j.settings.max_tokens_default){$('maxTok').value=String(j.settings.max_tokens_default);}}}).catch(function(){});
 $('keyBtn').onclick=async function(){
  $('keyModal').style.display='flex';
  try{const r=await fetch('api/apikey');const j=await r.json();$('keyVal').value=j.key||'';}
