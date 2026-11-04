@@ -43,7 +43,7 @@ NAS /mnt/workspace （模型、代码、配置、wheel 缓存）
 
 能力：
 - 多模型 GGUF 对话（流式、硬开关思考、上下文管理、队列）
-- 多会话聊天页：每个会话独立上下文，本地保存，可新建/切换/删除
+- 多会话聊天页：每个会话独立上下文，本地保存；支持搜索、时间分组、置顶、重命名、删除和侧栏折叠
 - OpenAI 兼容 `/v1/chat/completions`、`/v1/embeddings`
 - 异步生图（SDXL-Turbo、FLUX.1-schnell INT4 OpenVINO）
 - Basic Auth + API Key；网页管理 key/密码/设置
