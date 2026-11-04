@@ -823,7 +823,7 @@ const $=id=>document.getElementById(id);
 let models=[],loaded=null,loading=null;
 let history=[];
 const CONV_KEY='muse_convs_v1';
-let convs=[],currentId=null,lastUserPrompt='';
+let convs=[],currentId=null,lastUserPrompt='',pendingStreams={};
 function uid(){return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function makeTitle(s){
  s=String(s||'');
@@ -938,6 +938,35 @@ function removeLastUser(id){
  if(currentId===id){history=c.messages.slice();}
  renderThreads();
 }
+function startAssistant(convId){
+ var c=findConv(convId);if(!c)return null;
+ var mid='m'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+ c.messages=c.messages||[];
+ c.messages.push({role:'assistant',content:'',mid:mid,pending:true});
+ c.messages=c.messages.slice(-80);c.updatedAt=Date.now();
+ saveConvs();if(currentId===convId)history=c.messages.slice();
+ renderThreads();return mid;
+}
+function updateAssistant(convId,mid,content,extra){
+ var c=findConv(convId);if(!c)return;
+ var ms=c.messages||[];
+ for(var i=0;i<ms.length;i++){
+  if(ms[i].mid===mid){
+   ms[i].content=String(content||'');
+   if(extra)for(var k in extra)ms[i][k]=extra[k];
+   c.updatedAt=Date.now();saveConvs();
+   if(currentId===convId)history=c.messages.slice();
+   return;
+  }
+ }
+}
+function removeAssistant(convId,mid){
+ var c=findConv(convId);if(!c)return;
+ c.messages=(c.messages||[]).filter(function(m){return m.mid!==mid;});
+ c.updatedAt=Date.now();saveConvs();
+ if(currentId===convId)history=c.messages.slice();
+ renderThreads();
+}
 function newConv(){
  var c={id:uid(),title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[],pinned:false};
  convs.unshift(c);currentId=c.id;history=[];
@@ -985,7 +1014,17 @@ function initConvs(){
  var c=currentConv();history=(c.messages||[]).slice();
  renderThreads();restoreHist();
 }
-function restoreHist(){for(const m of history){if(m.role==='user')addMsg('me',m.content);else if(m.role==='assistant'){const el=addMsg('ai','');renderFinal(el,m.content,m.ui||[],m.uiInline||[]);}}}
+function restoreHist(){for(const m of history){
+ if(m.role==='user')addMsg('me',m.content);
+ else if(m.role==='assistant'){
+  const el=addMsg('ai','');renderFinal(el,m.content,m.ui||[],m.uiInline||[]);
+  if(m.pending||m.interrupted){
+   const n=document.createElement('div');n.className='iui-pending';
+   n.textContent=m.pending?'生成中断 · 刷新前已保存部分内容':'生成中断';
+   el.appendChild(n);
+  }
+ }
+}}
 function addMsg(kind,text){const d=document.createElement('div');d.className='msg '+kind;d.textContent=text;$('log').appendChild(d);$('log').scrollTop=$('log').scrollHeight;return d;}
 async function jget(u){const r=await fetch(u,{cache:'no-store'});return r.json();}
 async function jpost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});}
@@ -1469,13 +1508,15 @@ async function send(){
  lastUserPrompt=p;const convId=currentId;
  $('prompt').value='';addMsg('me',p);
  appendToConv(convId,{role:'user',content:p});
- const reqMsgs=history.map(function(m){return {role:m.role,content:plainForModel(m)};});
+ const aid=startAssistant(convId);
+ pendingStreams[aid]={convId:convId,acc:'',last:0};
+ const reqMsgs=history.filter(function(m){return !(m.role==='assistant'&&m.pending);}).map(function(m){return {role:m.role,content:plainForModel(m)};});
  try{
   await ensure(model);
   try{const q=await (await fetch('api/queue')).json(); if(q.busy||q.waiting>0){addMsg('sys','⏳ 服务器正忙，请求已排队'+(q.waiting?('（前面还有 '+q.waiting+' 个）'):'')+'，请耐心等待…');}}catch(e){}
   const el=addMsg('ai','');
   const resp=await jpost('api/chat',{model:model,messages:reqMsgs,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10),intelligent_ui:true});
-  if(!resp.ok){el.textContent='请求失败：'+await resp.text();removeLastUser(convId);return;}
+  if(!resp.ok){const err='请求失败：'+await resp.text();el.textContent=err;removeAssistant(convId,aid);removeLastUser(convId);delete pendingStreams[aid];return;}
   const reader=resp.body.getReader(),dec=new TextDecoder();
   let acc='',buf='';
   while(true){
@@ -1485,7 +1526,7 @@ async function send(){
    while((i=buf.indexOf('\n\n'))>=0){
     const line=buf.slice(0,i).trim();buf=buf.slice(i+2);
     if(line.startsWith('data: ')){const data=line.slice(6);if(data==='[DONE]')continue;
-     try{const j=JSON.parse(data);if(j.meta){if(currentId===convId)setCtxMeta(j.meta);continue;}if(j.delta){acc+=j.delta;render(el,acc);$('log').scrollTop=$('log').scrollHeight;}}catch(e){}}
+     try{const j=JSON.parse(data);if(j.meta){if(currentId===convId)setCtxMeta(j.meta);continue;}if(j.delta){acc+=j.delta;render(el,acc);$('log').scrollTop=$('log').scrollHeight;var ps=pendingStreams[aid];if(ps){ps.acc=acc;if(Date.now()-ps.last>700){ps.last=Date.now();updateAssistant(convId,aid,acc,{pending:true});}}}}catch(e){}}
    }
   }
   if(currentId===convId)renderCtx(acc.length);
@@ -1511,10 +1552,23 @@ async function send(){
   }
   const hasUI=hasAuto||!!planned;
   const finalText=cleanParts.text||(hasUI?'（智能视图）':clean);
-  appendToConv(convId,{role:'assistant',content:finalText,ui:cleanParts.specs.concat(planned?[planned]:[]),uiInline:cleanParts.inline||[]});
-  if(currentId===convId&&!el.isConnected){const e=addMsg('ai','');renderFinal(e,acc);}
- }catch(e){if(currentId===convId)addMsg('sys','出错：'+e.message);}
+  const uiBlock=cleanParts.specs.concat(planned?[planned]:[]);
+  const uiInline=cleanParts.inline||[];
+  updateAssistant(convId,aid,finalText,{pending:false,ui:uiBlock,uiInline:uiInline});
+  delete pendingStreams[aid];
+  if(currentId===convId&&!el.isConnected){const e=addMsg('ai','');renderFinal(e,finalText,uiBlock,uiInline);}
+ }catch(e){
+  var ps2=pendingStreams[aid];
+  if(ps2){updateAssistant(convId,aid,ps2.acc||'',{pending:false,interrupted:true});delete pendingStreams[aid];}
+  if(currentId===convId)addMsg('sys','出错：'+e.message);
+ }
 }
+window.addEventListener('beforeunload',function(){
+ for(var mid in pendingStreams){
+  var ps=pendingStreams[mid];
+  if(ps)updateAssistant(ps.convId,mid,ps.acc||'',{pending:true});
+ }
+});
 $('send').onclick=send;
 $('prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 $('clearBtn').onclick=function(){newConv();};
