@@ -150,11 +150,13 @@ def _ui_extract_json(text):
     if a < 0 or b <= a:
         return None
     raw = t[a:b + 1]
-    for candidate in (raw, re.sub(r",\s*([}\]])", r"\1", raw)):
-        try:
-            return json.loads(candidate)
-        except Exception:
-            pass
+    raws = [raw, raw.replace('\\"', '"')]
+    for base_raw in raws:
+        for candidate in (base_raw, re.sub(r",\s*([}\]])", r"\1", base_raw)):
+            try:
+                return json.loads(candidate)
+            except Exception:
+                pass
     return None
 
 
@@ -1381,9 +1383,12 @@ function parseUISpecText(raw){
  var a=t.indexOf('{'),b=t.lastIndexOf('}');
  if(a<0||b<=a)return null;
  var body=t.slice(a,b+1);
+ var bodies=[body,body.replace(/\\"/g,'"')];
  var j=null;
- try{j=JSON.parse(body);}catch(e){
-  try{j=JSON.parse(body.replace(/,\s*([}\]])/g,'$1'));}catch(e2){return null;}
+ for(var bi=0;bi<bodies.length&&!j;bi++){
+  try{j=JSON.parse(bodies[bi]);}catch(e){
+   try{j=JSON.parse(bodies[bi].replace(/,\s*([}\]])/g,'$1'));}catch(e2){}
+  }
  }
  if(!j||['compare','chart','calculator','flow'].indexOf(String(j.type))<0)return null;
  return j;
