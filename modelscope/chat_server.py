@@ -478,7 +478,8 @@ button,input,select,textarea{font:inherit}
 #status{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #status::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);flex:0 0 auto}
 #progWrap{display:none;align-items:center;gap:10px;padding:7px 22px;border-bottom:1px solid var(--border);background:var(--panel)}
-#progBar{height:3px;flex:0 0 180px;background:var(--accent);border-radius:2px;width:0;transition:width .8s linear}
+#progTrack{flex:0 0 180px;height:4px;background:#232529;border-radius:3px;overflow:hidden}
+#progBar{height:100%;width:0;background:linear-gradient(90deg,#6f9f4a,var(--accent));border-radius:3px;transition:width .6s ease}
 #progText{font:11px/1.4 var(--mono);color:var(--muted);white-space:nowrap}
 
 /* ---------- messages ---------- */
@@ -658,7 +659,7 @@ button,input,select,textarea{font:inherit}
    <span id="ctxInfo" title="上下文占用估算（由服务端预算裁剪后计算）">上下文 ≈ —</span>
    <span id="status">连接中…</span>
   </div>
-  <div id="progWrap"><div id="progBar"></div><span id="progText"></span></div>
+  <div id="progWrap"><div id="progTrack"><div id="progBar"></div></div><span id="progText"></span></div>
   <div id="log"></div>
   <div id="inputbar">
    <div class="composer">
