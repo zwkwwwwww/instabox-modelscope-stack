@@ -736,6 +736,7 @@ button,input,select,textarea{font:inherit}
 .svg-bar{padding:8px 12px;border-bottom:1px solid var(--border);font:600 9px/1.2 var(--mono);letter-spacing:.08em;color:var(--accent)}
 .svg-wrap{padding:12px;overflow:auto;background:#fff}
 .svg-wrap svg{display:block;max-width:100%;height:auto;margin:0 auto}
+.svg-fallback{margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:10px;background:#0d0e10;color:var(--muted);font:12px/1.5 var(--mono);white-space:pre-wrap;overflow:auto;max-height:320px}
 #log:empty::before{content:'M';display:flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:13px;background:var(--card);border:1px solid var(--border);color:var(--muted);font:700 18px var(--mono);margin:auto auto 14px}
 #log:empty::after{content:'开始一个新对话  ·  本地 CPU 推理';color:var(--dim);font-size:12px;letter-spacing:.02em;text-align:center;margin:0 auto auto}
 
@@ -1794,7 +1795,12 @@ function safeStyleSheet(css){
  }
  return out.join("");
 }
+function decodeSvgEscapes(s){
+ var bs=String.fromCharCode(92);
+ return String(s||"").split(bs+'"').join('"').split(bs+'n').join(String.fromCharCode(10)).split(bs+'t').join(String.fromCharCode(9)).split(bs+bs).join(bs);
+}
 function sanitizeSvg(text){
+ text=decodeSvgEscapes(text);
  var doc;
  try{doc=new DOMParser().parseFromString(String(text||""),"image/svg+xml");}catch(e){return null;}
  if(!doc||doc.getElementsByTagName("parsererror").length)return null;
@@ -1859,8 +1865,13 @@ function protectRawSvg(s){
 }
 function mountRawSvgs(root,list){
  for(var i=0;i<list.length;i++){
-  var svg=sanitizeSvg(list[i]);if(!svg)continue;
-  var card=makeSvgCard(svg);
+  var svg=sanitizeSvg(list[i]);
+  var card;
+  if(svg){card=makeSvgCard(svg);}
+  else{
+   card=document.createElement("pre");card.className="svg-fallback";
+   card.textContent=decodeSvgEscapes(list[i]);
+  }
   if(!replaceUIToken(root,"@@RAWSVG"+i+"@@",card))root.appendChild(card);
  }
 }
