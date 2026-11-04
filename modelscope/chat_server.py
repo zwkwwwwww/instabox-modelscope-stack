@@ -1531,27 +1531,55 @@ function sanitizeSvg(text){
  }
  return build(root);
 }
+function makeSvgCard(svg){
+ var card=document.createElement("div");card.className="svg-card";
+ var bar=document.createElement("div");bar.className="svg-bar";bar.textContent="✦ 矢量图";
+ var wrap=document.createElement("div");wrap.className="svg-wrap";wrap.appendChild(svg);
+ card.appendChild(bar);card.appendChild(wrap);return card;
+}
 function renderSvgBlocks(root){
  var codes=Array.from(root.querySelectorAll("pre code"));
  for(var i=0;i<codes.length;i++){
   var txt=(codes[i].textContent||"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&amp;/g,"&").trim();
   if(txt.slice(0,4).toLowerCase()!=="<svg")continue;
   var svg=sanitizeSvg(txt);if(!svg)continue;
-  var card=document.createElement("div");card.className="svg-card";
-  var bar=document.createElement("div");bar.className="svg-bar";bar.textContent="✦ 矢量图";
-  var wrap=document.createElement("div");wrap.className="svg-wrap";wrap.appendChild(svg);
-  card.appendChild(bar);card.appendChild(wrap);
-  var pre=codes[i].closest("pre");if(pre)pre.replaceWith(card);
+  var pre=codes[i].closest("pre");if(pre)pre.replaceWith(makeSvgCard(svg));
+ }
+}
+function protectRawSvg(s){
+ var parts=String(s||"").split("```"),svgs=[];
+ for(var p=0;p<parts.length;p+=2){
+  var seg=parts[p],lower=seg.toLowerCase(),out="",pos=0;
+  while(true){
+   var a=lower.indexOf("<svg",pos);
+   if(a<0){out+=seg.slice(pos);break;}
+   var b=lower.indexOf("</svg>",a);
+   if(b<0){out+=seg.slice(pos);break;}
+   var end=b+6;
+   out+=seg.slice(pos,a)+"@@RAWSVG"+svgs.length+"@@";
+   svgs.push(seg.slice(a,end));pos=end;
+  }
+  parts[p]=out;
+ }
+ return {text:parts.join("```"),svgs:svgs};
+}
+function mountRawSvgs(root,list){
+ for(var i=0;i<list.length;i++){
+  var svg=sanitizeSvg(list[i]);if(!svg)continue;
+  var card=makeSvgCard(svg);
+  if(!replaceUIToken(root,"@@RAWSVG"+i+"@@",card))root.appendChild(card);
  }
 }
 function mdRender(el,ans){
  ans=normalizeLatex(ans);
+ var rawSvg=protectRawSvg(ans);ans=rawSvg.text;
  let html;
  try{html=(window.marked&&typeof marked.parse==='function')?marked.parse(escapeForMd(ans)):null;}catch(e){html=null;}
  if(html===null){const a=document.createElement('div');a.textContent=ans;el.appendChild(a);return;}
  const a=document.createElement('div');a.className='md';a.innerHTML=html;el.appendChild(a);
  if(window.renderMathInElement){try{renderMathInElement(a,{delimiters:[{left:'$$',right:'$$',display:true},{left:String.fromCharCode(92)+'[',right:String.fromCharCode(92)+']',display:true},{left:String.fromCharCode(92)+'(',right:String.fromCharCode(92)+')',display:false},{left:'$',right:'$',display:false}],throwOnError:false,strict:false});}catch(e){}}
  renderSvgBlocks(a);
+ mountRawSvgs(a,rawSvg.svgs);
 }
 function renderFinal(el,acc,knownBlock,knownInline){
  let think='',ans=acc;
