@@ -737,6 +737,93 @@ button,input,select,textarea{font:inherit}
 .svg-wrap{padding:12px;overflow:auto;background:#fff}
 .svg-wrap svg{display:block;max-width:100%;height:auto;margin:0 auto}
 .svg-fallback{margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:10px;background:#0d0e10;color:var(--muted);font:12px/1.5 var(--mono);white-space:pre-wrap;overflow:auto;max-height:320px}
+
+/* ---------- image view ---------- */
+#chatView{display:flex;flex-direction:column;flex:1;min-height:0}
+#imgView{display:none;flex-direction:column;flex:1;min-height:0}
+#main.img-mode #chatView{display:none}
+#main.img-mode #imgView{display:flex}
+#imgBtn.active{background:var(--card2);color:var(--text)}
+#imgBtn.active svg{color:var(--accent);opacity:1}
+#imgBar{display:flex;align-items:center;gap:10px;padding:10px 22px;border-bottom:1px solid var(--border);background:rgba(15,16,18,.82);backdrop-filter:blur(10px);min-height:54px}
+#imgBack{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:8px;cursor:pointer;flex:0 0 auto}
+#imgBack:hover{background:var(--card2);color:var(--text);border-color:var(--border2)}
+#imgBack svg{width:15px;height:15px}
+.img-heading{display:flex;align-items:baseline;gap:8px;min-width:0}
+.img-heading b{font-size:13.5px;font-weight:650;white-space:nowrap}
+.img-heading span{font:9.5px/1 var(--mono);letter-spacing:.09em;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.img-warm{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0;font:10.5px/1.4 var(--mono);color:var(--muted)}
+#igWarm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px}
+#igWarmBtn{border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:7px;padding:5px 9px;font-size:11px;cursor:pointer;white-space:nowrap}
+#igWarmBtn:hover{background:var(--card2);color:var(--text);border-color:var(--border2)}
+#imgScroll{flex:1;overflow-y:auto;padding:34px max(22px,calc((100% - 980px)/2)) 56px}
+#imgScroll::-webkit-scrollbar{width:8px}
+#imgScroll::-webkit-scrollbar-thumb{background:#2a2d32;border-radius:8px}
+.img-shell{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.img-kicker{font:600 9px/1.3 var(--mono);letter-spacing:.16em;color:var(--accent)}
+.img-intro h1{margin:7px 0 6px;font-size:25px;line-height:1.18;letter-spacing:-.025em;font-weight:650}
+.img-intro p{margin:0;max-width:690px;color:var(--muted);font-size:12.5px;line-height:1.65}
+.img-panel{border:1px solid var(--border2);border-radius:16px;background:var(--card);padding:13px;box-shadow:0 18px 55px rgba(0,0,0,.24);transition:border-color .15s}
+.img-panel:focus-within{border-color:#4a4f58}
+#igPrompt{display:block;width:100%;min-height:112px;max-height:300px;resize:vertical;background:var(--bg);border:1px solid transparent;border-radius:10px;color:var(--text);padding:12px 13px;outline:none;font:14px/1.65 var(--sans)}
+#igPrompt:focus{border-color:var(--border)}
+#igPrompt::placeholder,#igNeg::placeholder{color:var(--dim)}
+.img-row{display:flex;gap:8px;margin-top:9px;align-items:stretch}
+#igNeg{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:12.5px;outline:none}
+#igNeg:focus{border-color:var(--border2)}
+#igGo{display:flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:9px;background:var(--text);color:#0b0c0e;padding:0 19px;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;transition:background .15s,transform .1s}
+#igGo:hover{background:#fff}
+#igGo:active{transform:scale(.98)}
+#igGo:disabled{opacity:.45;cursor:default;transform:none}
+#igGo span{font-size:14px;line-height:1}
+.img-opts{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:11px}
+.img-opts label{display:flex;align-items:center;gap:6px;font:10px/1.4 var(--mono);color:var(--dim)}
+.img-opts select{appearance:none;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:5px 8px;font-size:11.5px;outline:none;max-width:260px;cursor:pointer}
+.img-opts select:focus{border-color:var(--border2)}
+.img-hint{margin-left:auto;font:9.5px/1.4 var(--mono);color:var(--dim);white-space:nowrap}
+.img-prog{display:none;align-items:center;gap:10px;margin-top:12px}
+.img-prog-track{flex:1;height:4px;background:var(--border);border-radius:4px;overflow:hidden}
+#igProgBar{height:100%;width:0;background:linear-gradient(90deg,#6f9f4a,var(--accent));transition:width .6s ease}
+#igProgBar.indet{width:35%;background:linear-gradient(90deg,#2f6feb,#7aa2ff,#2f6feb);background-size:200% 100%;animation:slidebg 1.2s linear infinite}
+@keyframes slidebg{0%{background-position:0% 0}100%{background-position:-200% 0}}
+#igProgText{font:10px/1.4 var(--mono);color:var(--muted);white-space:nowrap}
+.img-status{min-height:18px;margin-top:10px;font:11px/1.5 var(--mono);color:var(--dim)}
+.img-out{position:relative;display:flex;align-items:center;justify-content:center;min-height:300px;border:1px solid var(--border);border-radius:16px;background:radial-gradient(circle at 50% 0%,rgba(158,206,106,.05),transparent 58%),var(--panel);overflow:hidden}
+.img-placeholder{display:flex;flex-direction:column;align-items:center;gap:6px;padding:66px 20px;text-align:center;color:var(--dim)}
+.img-placeholder svg{width:32px;height:32px;opacity:.45;margin-bottom:4px}
+.img-placeholder b{font-size:12.5px;font-weight:500;color:var(--muted)}
+.img-placeholder span{font:10px/1.4 var(--mono)}
+.img-result{margin:0;width:100%;display:flex;flex-direction:column;min-width:0;background:#0d0e10}
+.img-result[hidden]{display:none}
+.img-result img{display:block;width:auto;max-width:100%;height:auto;max-height:70vh;margin:0 auto;object-fit:contain;background:#0d0e10}
+.img-result figcaption{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--border);font:10.5px/1.4 var(--mono);color:var(--muted)}
+.img-result figcaption b{color:var(--text);font-weight:600;letter-spacing:.04em;margin-right:8px}
+.img-actions{display:flex;gap:7px}
+.img-actions a{border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--muted);text-decoration:none;font:10.5px/1.3 var(--mono)}
+.img-actions a:hover{background:var(--card2);border-color:var(--border2);color:var(--text)}
+.img-api{border-top:1px solid var(--border);padding-top:12px;font-size:11.5px;color:var(--dim)}
+.img-api summary{cursor:pointer;color:var(--muted);font-size:11.5px;user-select:none}
+.img-api summary:hover{color:var(--text)}
+.img-api pre{margin:10px 0 0;padding:12px;border:1px solid var(--border);border-radius:9px;background:#0d0e10;color:#c9d1d9;overflow-x:auto;font:11px/1.6 var(--mono)}
+@media(max-width:600px){
+ #imgBar{padding:8px 10px;gap:8px}
+ .img-heading span{display:none}
+ .img-warm{gap:6px}
+ #igWarm{max-width:120px}
+ #imgScroll{padding:22px 12px 38px}
+ .img-intro h1{font-size:21px}
+ .img-intro p{font-size:12px}
+ .img-panel{padding:10px;border-radius:13px}
+ #igPrompt{min-height:100px;font-size:13.5px}
+ .img-row{flex-wrap:wrap}
+ #igGo{width:100%;height:42px}
+ .img-opts{gap:9px}
+ .img-opts select{max-width:190px}
+ .img-hint{display:none}
+ .img-out{min-height:240px;border-radius:13px}
+ .img-placeholder{padding:48px 16px}
+ .img-result figcaption{align-items:flex-start;flex-direction:column;gap:8px}
+}
 #log:empty::before{content:'M';display:flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:13px;background:var(--card);border:1px solid var(--border);color:var(--muted);font:700 18px var(--mono);margin:auto auto 14px}
 #log:empty::after{content:'开始一个新对话  ·  本地 CPU 推理';color:var(--dim);font-size:12px;letter-spacing:.02em;text-align:center;margin:0 auto auto}
 
@@ -866,7 +953,7 @@ button,input,select,textarea{font:inherit}
    <div class="side-note">每个会话独立上下文 · 本地保存</div>
   </div>
   <nav class="side-nav">
-   <a href="img" target="_blank" id="imgLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>生图</a>
+   <button id="imgBtn" title="打开生图工作台"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>生图</button>
    <button id="keyBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 3l4 4M14 6l3 3"/></svg>API Key</button>
    <button id="setBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.5.55.89 1.06 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>设置</button>
   </nav>
@@ -874,6 +961,7 @@ button,input,select,textarea{font:inherit}
  </aside>
 
  <div id="main">
+  <div id="chatView">
   <div id="bar">
    <button id="menuBtn" title="菜单"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
    <select id="model" class="ctl" title="模型"></select>
@@ -892,6 +980,63 @@ button,input,select,textarea{font:inherit}
    </div>
    <div class="hint"><span>Enter 发送 · Shift+Enter 换行</span><span>魔搭 CPU · 本地推理</span></div>
   </div>
+  </div><!-- /chatView -->
+
+  <div id="imgView">
+   <div id="imgBar">
+    <button id="imgBack" title="返回聊天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+    <div class="img-heading"><b>生图</b><span>IMAGE LAB · LOCAL DIFFUSION</span></div>
+    <div class="img-warm"><span id="igWarm">预热：—</span><button id="igWarmBtn">预热模型</button></div>
+   </div>
+   <div id="imgScroll">
+    <div class="img-shell">
+     <div class="img-intro">
+      <div class="img-kicker">TEXT TO IMAGE</div>
+      <h1>把想法变成画面</h1>
+      <p>SDXL / FLUX 本地 CPU 推理。生图会卸载聊天模型，切回聊天后首次发送会自动重新加载聊天模型。</p>
+     </div>
+     <div class="img-panel">
+      <textarea id="igPrompt" placeholder="描述你想要的画面，例如：一只鹈鹕骑着自行车穿过海边小镇，暖色日落，电影感，细节丰富"></textarea>
+      <div class="img-row">
+       <input id="igNeg" placeholder="负面提示（可选），例如：模糊、畸形、低质量" />
+       <button id="igGo" title="生成图片">生成图片 <span>↗</span></button>
+      </div>
+      <div class="img-opts">
+       <label>模型 <select id="igModel"></select></label>
+       <label>尺寸 <select id="igSize"><option value="512">512 × 512</option><option value="640">640 × 640</option><option value="768">768 × 768</option><option value="1024">1024 × 1024</option></select></label>
+       <label>步数 <select id="igSteps"><option value="1">1 步</option><option value="2">2 步</option><option value="4" selected>4 步</option><option value="8">8 步</option><option value="20">20 步</option><option value="30">30 步</option></select></label>
+       <span class="img-hint">Ctrl / ⌘ + Enter 生成</span>
+      </div>
+      <div class="img-prog" id="igProgWrap"><div class="img-prog-track"><div id="igProgBar"></div></div><span id="igProgText"></span></div>
+      <div class="img-status" id="igStatus">选择参数后点击生成。</div>
+     </div>
+     <div class="img-out" id="igOut">
+      <div class="img-placeholder" id="igPlaceholder">
+       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+       <b>生成的图片会出现在这里</b>
+       <span>CPU 推理 · 512px 约 1–4 分钟</span>
+      </div>
+      <figure class="img-result" id="igResult" hidden>
+       <img id="igImg" alt="生成结果" />
+       <figcaption>
+        <div><b id="igMeta"></b><span id="igTime"></span></div>
+        <div class="img-actions"><a id="igDownload" download="muse-image.png">下载 PNG</a><a id="igOpen" target="_blank" rel="noopener">打开原图</a></div>
+       </figcaption>
+      </figure>
+     </div>
+     <details class="img-api">
+      <summary>API 调用（支持 API Key，适合脚本）</summary>
+      <pre># 1) 提交任务
+curl -X POST https://YOUR_DOMAIN/api/image -H "Authorization: Bearer sk-你的KEY" -H "Content-Type: application/json" -d '{"model":"flux-schnell-ov","prompt":"a cat","steps":4,"width":512,"height":512}'
+# 返回: {"id":"xxxxxxxx","status":"running"}
+# 2) 轮询结果（running 时返回进度，完成时直接返回图片）
+curl -H "Authorization: Bearer sk-你的KEY" "https://YOUR_DOMAIN/api/image/result?id=xxxxxxxx" -o out.png
+# 模型列表: GET /api/imgmodels    预热: POST /api/image/preload {"model":"flux-schnell-ov"}
+# 预热状态: GET /api/image/warm   也可用网页账号密码做 Basic 认证</pre>
+     </details>
+    </div>
+   </div>
+  </div><!-- /imgView -->
  </div>
 </div>
 <div id="scrim"></div>
@@ -1083,6 +1228,7 @@ function removeAssistant(convId,mid){
  renderThreads();
 }
 function newConv(){
+ if(isImgMode())goChat();
  var c={id:uid(),title:'新对话',createdAt:Date.now(),updatedAt:Date.now(),messages:[],pinned:false};
  convs.unshift(c);currentId=c.id;history=[];
  var cs=$('convSearch');if(cs)cs.value='';
@@ -1091,6 +1237,7 @@ function newConv(){
  var p=$('prompt');if(p)p.focus();
 }
 function switchConv(id){
+ if(isImgMode())goChat();
  if(id===currentId)return;
  var c=null;for(var i=0;i<convs.length;i++){if(convs[i].id===id){c=convs[i];break;}}
  if(!c)return;
@@ -2108,7 +2255,188 @@ $('keyRotate').onclick=async function(){
  if(j.key){$('keyVal').value=j.key;addMsg('sys','API Key 已重置，请复制新 Key');}
  else{addMsg('sys','重置失败：'+(j.error||'未知错误'));}
 };
+/* ---------- image subpage ---------- */
+var IG={inited:false,models:[],timer:null,busy:false,url:null,t0:0,warmTries:0};
+function isImgMode(){return location.hash==='#img'||location.hash==='#/img';}
+function applyRoute(){
+ var img=isImgMode(),main=$('main');if(!main)return;
+ main.classList.toggle('img-mode',img);
+ var b=$('imgBtn');if(b)b.classList.toggle('active',img);
+ document.body.classList.remove('nav-open');
+ document.title=img?'生图 · 魔搭 Chat':'魔搭 Chat';
+ if(img)initImage();
+}
+function goImage(){
+ if(isImgMode()){applyRoute();return;}
+ location.hash='img';
+}
+function goChat(){
+ if(isImgMode()){
+  try{window.history.replaceState(null,'',location.pathname+location.search);}catch(e){location.hash='';}
+ }
+ applyRoute();
+}
+function hideIgResult(){
+ var r=$('igResult');if(r)r.hidden=true;
+ var ph=$('igPlaceholder');if(ph)ph.style.display='';
+ if(IG.url){URL.revokeObjectURL(IG.url);IG.url=null;}
+}
+async function initImage(){
+ if(IG.inited)return;
+ IG.inited=true;
+ try{
+  var j=await (await fetch('api/imgmodels')).json();
+  IG.models=j.models||[];
+  var sel=$('igModel');
+  for(var i=0;i<IG.models.length;i++){
+   var o=document.createElement('option');o.value=IG.models[i].id;o.textContent=IG.models[i].label;sel.appendChild(o);
+  }
+  var saved='';try{saved=localStorage.getItem('muse_img_model')||'';}catch(e){}
+  if(saved&&IG.models.some(function(m){return m.id===saved;}))sel.value=saved;
+  var syncSteps=function(){var mm=IG.models.filter(function(x){return x.id===sel.value;})[0];if(mm)$('igSteps').value=String(mm.steps||4);};
+  syncSteps();
+  sel.onchange=function(){
+   syncSteps();
+   try{localStorage.setItem('muse_img_model',sel.value);}catch(e){}
+   if(IG.busy)return;
+   hideIgResult();
+   $('igStatus').textContent='切换模型，正在准备……';
+   preloadImage();
+  };
+  if(!IG.models.length)$('igStatus').textContent='没有可用的生图模型';
+  else preloadImage();
+ }catch(e){$('igStatus').textContent='读取生图模型失败：'+e.message;}
+}
+function preloadImage(){
+ var mm=$('igModel').value;if(!mm)return;
+ IG.warmTries=0;
+ $('igWarm').textContent='准备预热…';
+ fetch('api/image/preload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:mm})}).catch(function(){});
+ pollIgWarm();
+}
+function pollIgWarm(){
+ if(IG.timer)clearInterval(IG.timer);
+ IG.timer=setInterval(async function(){
+  try{
+   var j=await (await fetch('api/image/warm')).json();
+   var w=$('igWarm'),want=$('igModel').value;
+   if(j.loading){
+    IG.warmTries=0;
+    w.textContent='🔥 正在预热：'+j.loading;
+    if(!IG.busy){
+     $('igProgWrap').style.display='flex';
+     $('igProgBar').classList.add('indet');
+     $('igProgBar').style.width='35%';
+     $('igProgText').textContent='加载模型';
+    }
+   }else if(j.loaded&&j.loaded===want){
+    w.textContent='✅ 已预热：'+j.loaded;
+    $('igProgBar').classList.remove('indet');
+    if(!IG.busy){
+     $('igProgWrap').style.display='none';
+     $('igProgBar').style.width='0%';
+     $('igProgText').textContent='';
+    }
+    clearInterval(IG.timer);IG.timer=null;
+   }else if(IG.warmTries<6){
+    IG.warmTries++;
+    w.textContent='等待预热…';
+   }else{
+    w.textContent=j.loaded?('已加载：'+j.loaded):'预热：—';
+    $('igProgBar').classList.remove('indet');
+    if(!IG.busy){
+     $('igProgWrap').style.display='none';
+     $('igProgBar').style.width='0%';
+     $('igProgText').textContent='';
+    }
+    clearInterval(IG.timer);IG.timer=null;
+   }
+  }catch(e){clearInterval(IG.timer);IG.timer=null;}
+ },2500);
+}
+function showIgResult(blob,body){
+ if(IG.url)URL.revokeObjectURL(IG.url);
+ IG.url=URL.createObjectURL(blob);
+ $('igImg').src=IG.url;
+ $('igResult').hidden=false;
+ $('igPlaceholder').style.display='none';
+ var mm=IG.models.filter(function(x){return x.id===body.model;})[0];
+ $('igMeta').textContent=(mm?mm.label:body.model)+' · '+body.width+'×'+body.height+' · '+body.steps+' 步';
+ $('igTime').textContent='用时 '+((Date.now()-IG.t0)/1000).toFixed(1)+' 秒';
+ var dl=$('igDownload');dl.href=IG.url;dl.download='muse-'+Date.now()+'.png';
+ $('igOpen').href=IG.url;
+ $('igProgBar').classList.remove('indet');
+ $('igProgBar').style.width='100%';
+ $('igProgText').textContent='100%';
+ $('igStatus').textContent='✅ 完成';
+ try{$('igOut').scrollIntoView({behavior:'smooth',block:'nearest'});}catch(e){}
+ setTimeout(function(){
+  if(IG.busy)return;
+  $('igProgWrap').style.display='none';
+  $('igProgBar').style.width='0%';
+  $('igProgText').textContent='';
+ },2500);
+}
+async function generateImage(){
+ if(IG.busy)return;
+ var pp=$('igPrompt').value.trim();
+ if(!pp){$('igStatus').textContent='请先输入画面描述';$('igPrompt').focus();return;}
+ IG.busy=true;
+ IG.t0=Date.now();
+ var btn=$('igGo');btn.disabled=true;
+ if(IG.timer){clearInterval(IG.timer);IG.timer=null;}
+ $('igProgBar').classList.remove('indet');
+ $('igProgBar').style.width='2%';
+ $('igProgWrap').style.display='flex';
+ $('igProgText').textContent='';
+ $('igStatus').textContent='提交任务…';
+ var body={model:$('igModel').value,prompt:pp,negative_prompt:$('igNeg').value.trim(),steps:parseInt($('igSteps').value,10),width:parseInt($('igSize').value,10),height:parseInt($('igSize').value,10)};
+ try{
+  var r=await fetch('api/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var jj=await r.json();
+  if(!r.ok||!jj.id)throw new Error((jj&&jj.error)||'提交失败');
+  $('igStatus').textContent='生成中…（FLUX 约 3–4 分钟 / SDXL 约 1–4 分钟）';
+  while(true){
+   await new Promise(function(res){setTimeout(res,2000);});
+   var rr=await fetch('api/image/result?id='+encodeURIComponent(jj.id));
+   var ct=rr.headers.get('content-type')||'';
+   if(rr.ok&&ct.indexOf('image')>=0){
+    var blob=await rr.blob();
+    showIgResult(blob,body);
+    break;
+   }
+   if(rr.status>=500){
+    var ee='';try{ee=(await rr.json()).error||'';}catch(x){}
+    throw new Error(ee||'生成失败');
+   }
+   var st={};try{st=await rr.json();}catch(x){}
+   var pct=st.pct||0;
+   $('igProgBar').style.width=pct+'%';
+   var ph=(st.phase==='loading')?' · 加载模型中':'';
+   $('igProgText').textContent=pct+'% · 已等待 '+Math.round((Date.now()-IG.t0)/1000)+' 秒'+ph;
+  }
+ }catch(e){
+  $('igStatus').textContent='❌ '+e.message;
+  $('igProgWrap').style.display='none';
+  $('igProgBar').classList.remove('indet');
+ }finally{
+  IG.busy=false;btn.disabled=false;
+ }
+}
+$('imgBtn').onclick=goImage;
+$('imgBack').onclick=goChat;
+$('igWarmBtn').onclick=function(){
+ if(IG.busy)return;
+ $('igStatus').textContent='正在预热 '+(($('igModel').value)||'模型')+'…';
+ preloadImage();
+};
+$('igGo').onclick=generateImage;
+$('igPrompt').addEventListener('keydown',function(e){
+ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();generateImage();}
+});
+window.addEventListener('hashchange',applyRoute);
 initConvs();
+applyRoute();
 </script>
 <script>
 (function(){
