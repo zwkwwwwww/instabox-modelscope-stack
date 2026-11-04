@@ -210,6 +210,95 @@ gen_lock = threading.Lock()
 q_lock = threading.Lock()
 q_state = {"waiting": 0}
 MAX_QUEUE = 8
+CONV_FILE = "/mnt/workspace/chat/conversations.json"
+conv_lock = threading.Lock()
+stop_lock = threading.Lock()
+STOP_EVENTS = {}
+
+
+def _load_convs_db():
+    try:
+        with open(CONV_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and isinstance(data.get("conversations"), list):
+            return data["conversations"]
+    except Exception:
+        pass
+    return []
+
+
+def _save_convs_db(items):
+    try:
+        os.makedirs(os.path.dirname(CONV_FILE), exist_ok=True)
+        tmp = CONV_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"conversations": items}, f, ensure_ascii=False)
+        os.replace(tmp, CONV_FILE)
+    except Exception:
+        pass
+
+
+def _upsert_conv_snapshot(conv):
+    if not isinstance(conv, dict) or not conv.get("id"):
+        return
+    cid = str(conv.get("id"))
+    with conv_lock:
+        items = _load_convs_db()
+        found = False
+        for i, c in enumerate(items):
+            if isinstance(c, dict) and str(c.get("id")) == cid:
+                items[i] = conv
+                found = True
+                break
+        if not found:
+            items.append(conv)
+        _save_convs_db(items)
+
+
+def _update_conv_message(cid, mid, content, pending, extra=None):
+    if not cid or not mid:
+        return
+    with conv_lock:
+        items = _load_convs_db()
+        for c in items:
+            if not isinstance(c, dict) or str(c.get("id")) != str(cid):
+                continue
+            msgs = c.get("messages")
+            if not isinstance(msgs, list):
+                msgs = []
+                c["messages"] = msgs
+            target = None
+            for m in msgs:
+                if isinstance(m, dict) and str(m.get("mid")) == str(mid):
+                    target = m
+                    break
+            if target is None:
+                target = {"role": "assistant", "mid": mid, "content": ""}
+                msgs.append(target)
+            target["content"] = content
+            target["pending"] = bool(pending)
+            if extra:
+                for k, v in extra.items():
+                    if v is None:
+                        target.pop(k, None)
+                    else:
+                        target[k] = v
+            c["updatedAt"] = int(time.time() * 1000)
+            _save_convs_db(items)
+            return
+
+
+def _clean_reply_text(text):
+    t = str(text or "")
+    ct = t.find("</" + "think>")
+    if ct >= 0:
+        t = t[ct + 8:]
+    t = t.replace("<" + "think>", "").strip()
+    return t
+
+
 
 
 def load_model(name):
@@ -835,7 +924,7 @@ const $=id=>document.getElementById(id);
 let models=[],loaded=null,loading=null;
 let history=[];
 const CONV_KEY='muse_convs_v1';
-let convs=[],currentId=null,lastUserPrompt='',pendingStreams={},sending=false,currentAbort=null;
+let convs=[],currentId=null,lastUserPrompt='',pendingStreams={},sending=false,currentAbort=null,convSyncTimer=null,syncingPaused=false,currentJobId=null;
 function uid(){return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function makeTitle(s){
  s=String(s||'');
@@ -852,6 +941,17 @@ function saveConvs(){
   convs=(cur?[cur]:[]).concat(rest);
   try{localStorage.setItem(CONV_KEY,JSON.stringify({conversations:convs,currentId:currentId}));}catch(e2){}
  }
+ if(!syncingPaused)scheduleConvSync();
+}
+function scheduleConvSync(){
+ if(syncingPaused)return;
+ clearTimeout(convSyncTimer);
+ convSyncTimer=setTimeout(function(){
+  fetch('api/convs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversations:convs})}).catch(function(){});
+ },400);
+}
+async function syncConvsNow(){
+ try{await fetch('api/convs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversations:convs})});}catch(e){}
 }
 function saveHist(){var c=currentConv();if(!c)return;c.messages=history.slice(-80);c.updatedAt=Date.now();saveConvs();renderThreads();}
 function findConv(id){for(var i=0;i<convs.length;i++){if(convs[i].id===id)return convs[i];}return null;}
@@ -1008,23 +1108,38 @@ function deleteConv(id){
  $('log').innerHTML='';ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';
  restoreHist();
 }
-function initConvs(){
- try{var raw=localStorage.getItem(CONV_KEY);if(raw){var d=JSON.parse(raw);convs=Array.isArray(d.conversations)?d.conversations:[];currentId=d.currentId||null;}}catch(e){}
- for(var ci=0;ci<convs.length;ci++){if(!Array.isArray(convs[ci].messages))convs[ci].messages=[];convs[ci].pinned=!!convs[ci].pinned;}
- if(!convs.length){
-  var old=[];try{old=JSON.parse(localStorage.getItem('muse_hist')||'[]');}catch(e){}
-  if(Array.isArray(old)&&old.length){
-   var u=null;for(var i=0;i<old.length;i++){if(old[i]&&old[i].role==='user'){u=old[i];break;}}
-   convs=[{id:uid(),title:makeTitle(u?u.content:'历史对话'),createdAt:Date.now(),updatedAt:Date.now(),messages:old.slice(-80)}];
-   currentId=convs[0].id;
+async function initConvs(){
+ syncingPaused=true;
+ var server=null,localCurrent=null,localConvs=[];
+ try{
+  var raw=localStorage.getItem(CONV_KEY);
+  if(raw){var d=JSON.parse(raw);localCurrent=d.currentId||null;localConvs=Array.isArray(d.conversations)?d.conversations:[];}
+ }catch(e){}
+ try{
+  var r=await fetch('api/convs',{cache:'no-store'});
+  if(r.ok){var j=await r.json();if(Array.isArray(j.conversations)&&j.conversations.length)server=j.conversations;}
+ }catch(e){}
+ if(server)convs=server;
+ else{
+  convs=localConvs;
+  if(!convs.length){
+   var old=[];try{old=JSON.parse(localStorage.getItem('muse_hist')||'[]');}catch(e){}
+   if(Array.isArray(old)&&old.length){
+    var u=null;for(var i=0;i<old.length;i++){if(old[i]&&old[i].role==='user'){u=old[i];break;}}
+    convs=[{id:uid(),title:makeTitle(u?u.content:'历史对话'),createdAt:Date.now(),updatedAt:Date.now(),messages:old.slice(-80)}];
+    localCurrent=convs[0].id;
+   }
   }
  }
- saveConvs();
- if(!convs.length){newConv();return;}
+ for(var ci=0;ci<convs.length;ci++){if(!Array.isArray(convs[ci].messages))convs[ci].messages=[];convs[ci].pinned=!!convs[ci].pinned;}
+ if(!convs.length){syncingPaused=false;newConv();return;}
+ currentId=localCurrent;
  var found=false;for(var i=0;i<convs.length;i++){if(convs[i].id===currentId){found=true;break;}}
- if(!found){currentId=convs[0].id;saveConvs();}
+ if(!found)currentId=convs[0].id;
  var c=currentConv();history=(c.messages||[]).slice();
  renderThreads();restoreHist();
+ syncingPaused=false;
+ if(!server)await syncConvsNow();
 }
 function restoreHist(){for(const m of history){
  if(m.role==='user')addMsg('me',m.content);
@@ -1033,7 +1148,7 @@ function restoreHist(){for(const m of history){
   const el=addMsg('ai','');renderFinal(el,m.content,m.ui||[],m.uiInline||[]);
   if(m.pending||m.interrupted){
    const n=document.createElement('div');n.className='iui-pending';
-   n.textContent=m.pending?'生成中断 · 刷新前已保存部分内容':'生成中断';
+   n.textContent=m.pending?(m.job_id?'后台生成中 · 稍后刷新':'生成中断 · 刷新前已保存部分内容'):'生成中断';
    el.appendChild(n);
   }
  }
@@ -1798,12 +1913,11 @@ async function send(){
  const aid=startAssistant(convId);
  pendingStreams[aid]={convId:convId,acc:'',last:0};
  const reqMsgs=history.filter(function(m){return !(m.role==='assistant'&&m.pending);}).map(function(m){return {role:m.role,content:plainForModel(m)};});
+ syncingPaused=true;currentJobId=null;
  try{
-  await ensure(model);
-  if(currentAbort&&currentAbort.signal.aborted)throw new Error('已停止');
   try{const q=await (await fetch('api/queue')).json(); if(q.busy||q.waiting>0){addMsg('sys','⏳ 服务器正忙，请求已排队'+(q.waiting?('（前面还有 '+q.waiting+' 个）'):'')+'，请耐心等待…');}}catch(e){}
   const el=addMsg('ai','');
-  const resp=await fetch('api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:model,messages:reqMsgs,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10),intelligent_ui:true}),signal:currentAbort.signal});
+  const resp=await fetch('api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:model,messages:reqMsgs,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10),intelligent_ui:true,conversation_id:convId,assistant_mid:aid,conversation:currentConv()}),signal:currentAbort.signal});
   if(!resp.ok){const err='请求失败：'+await resp.text();el.textContent=err;removeAssistant(convId,aid);removeLastUser(convId);delete pendingStreams[aid];return;}
   const reader=resp.body.getReader(),dec=new TextDecoder();
   let acc='',buf='';
@@ -1814,7 +1928,7 @@ async function send(){
    while((i=buf.indexOf('\n\n'))>=0){
     const line=buf.slice(0,i).trim();buf=buf.slice(i+2);
     if(line.startsWith('data: ')){const data=line.slice(6);if(data==='[DONE]')continue;
-     try{const j=JSON.parse(data);if(j.meta){if(currentId===convId)setCtxMeta(j.meta);continue;}if(j.delta){acc+=j.delta;var stick=isAtBottom();render(el,acc);if(stick)scrollBottom();var ps=pendingStreams[aid];if(ps){ps.acc=acc;if(Date.now()-ps.last>700){ps.last=Date.now();updateAssistant(convId,aid,acc,{pending:true});}}}}catch(e){}}
+     try{const j=JSON.parse(data);if(j.meta){if(currentId===convId)setCtxMeta(j.meta);if(j.meta.job_id)currentJobId=j.meta.job_id;continue;}if(j.delta){acc+=j.delta;var stick=isAtBottom();render(el,acc);if(stick)scrollBottom();var ps=pendingStreams[aid];if(ps){ps.acc=acc;if(Date.now()-ps.last>700){ps.last=Date.now();updateAssistant(convId,aid,acc,{pending:true});}}}}catch(e){}}
    }
   }
   if(currentId===convId)renderCtx(acc.length);
@@ -1849,7 +1963,8 @@ async function send(){
   }
   if(currentId===convId)addMsg('sys',stopped?'已停止生成':'出错：'+e.message);
  } finally {
-  sending=false;currentAbort=null;
+  sending=false;currentAbort=null;currentJobId=null;syncingPaused=false;
+  saveConvs();
   var sb2=$('send');if(sb2){sb2.textContent='↑';sb2.title='发送';sb2.disabled=false;sb2.classList.remove('stop');}
  }
 }
@@ -1859,7 +1974,7 @@ window.addEventListener('beforeunload',function(){
   if(ps)updateAssistant(ps.convId,mid,ps.acc||'',{pending:true});
  }
 });
-$('send').onclick=function(){if(sending){if(currentAbort)currentAbort.abort();return;}send();};
+$('send').onclick=function(){if(sending){if(currentJobId)fetch('api/chat/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:currentJobId}),keepalive:true}).catch(function(){});if(currentAbort)currentAbort.abort();return;}send();};
 $('prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}});
 $('clearBtn').onclick=function(){newConv();};
 (function(){
@@ -2036,6 +2151,10 @@ class H(BaseHTTPRequestHandler):
             return self.send_json(200, {"object": "list", "data": data})
         if self.path.startswith("/api/apikey"):
             return self.send_json(200, {"key": API_KEY})
+        if self.path.startswith("/api/convs"):
+            with conv_lock:
+                items = _load_convs_db()
+            return self.send_json(200, {"conversations": items})
         if self.path.startswith("/api/settings"):
             return self.send_json(200, {"settings": settings, "user": AUTH_LINE.split(":")[0]})
         if self.path.startswith("/api/image/preload"):
@@ -2122,6 +2241,13 @@ class H(BaseHTTPRequestHandler):
                     left -= len(chunk)
             return self.send_json(200, {"ok": True, "size": os.path.getsize(fp)})
         d = self.body()
+        if self.path.startswith("/api/convs"):
+            items = d.get("conversations")
+            if not isinstance(items, list):
+                return self.send_json(400, {"error": "conversations required"})
+            with conv_lock:
+                _save_convs_db(items)
+            return self.send_json(200, {"ok": True})
         if self.path.startswith("/api/image/preload"):
             pm = d.get("model") or "sdxl-turbo"
             if pm not in IMG_MODELS:
@@ -2438,6 +2564,13 @@ class H(BaseHTTPRequestHandler):
             if state["name"] != name and state["loading"] != name:
                 threading.Thread(target=load_model, args=(name,), daemon=True).start()
             return self.send_json(200, {"ok": True, "loading": name})
+        if self.path.startswith("/api/chat/stop"):
+            jid = str(d.get("id") or "")
+            with stop_lock:
+                ev = STOP_EVENTS.get(jid)
+            if ev:
+                ev.set()
+            return self.send_json(200, {"ok": bool(ev)})
         if self.path.startswith("/api/chat"):
             name = d.get("model")
             prompt = (d.get("prompt") or "").strip()
@@ -2445,8 +2578,6 @@ class H(BaseHTTPRequestHandler):
             has_msgs = isinstance(raw_msgs, list) and bool(raw_msgs)
             if name not in MODELS or (not prompt and not has_msgs):
                 return self.send_json(400, {"error": "model/messages required"})
-            if state["name"] != name or state["llm"] is None:
-                return self.send_json(409, {"error": "model not loaded"})
             tlev = d.get("think_level") or settings.get("think_level", "high")
             if d.get("think") is False:
                 tlev = "off"
@@ -2471,6 +2602,9 @@ class H(BaseHTTPRequestHandler):
             if not any(m["role"] == "user" for m in msgs):
                 return self.send_json(400, {"error": "messages required"})
             msgs = [think_directive(tlev)] + msgs
+            if d.get("intelligent_ui"):
+                base = str(msgs[0].get("content") or "")
+                msgs[0] = {"role": "system", "content": base + (chr(10) + chr(10) if base else "") + UI_SYSTEM_PROMPT}
             budget = max(512, int((state.get("ctx") or 16384)) - mt - 300)
 
             def est(ml):
@@ -2483,55 +2617,103 @@ class H(BaseHTTPRequestHandler):
                     break
                 msgs.pop(idx)
                 trimmed += 1
+            conv = d.get("conversation")
+            if isinstance(conv, dict):
+                _upsert_conv_snapshot(conv)
+            conv_id = str(d.get("conversation_id") or (conv or {}).get("id") or "")
+            mid = str(d.get("assistant_mid") or "")
+            job_id = secrets.token_hex(10)
+            stop_event = threading.Event()
+            with stop_lock:
+                STOP_EVENTS[job_id] = stop_event
             with q_lock:
                 if q_state["waiting"] >= int(settings.get("max_queue") or 8):
+                    with stop_lock:
+                        STOP_EVENTS.pop(job_id, None)
                     return self.send_json(429, {"error": "busy, retry later"})
                 q_state["waiting"] += 1
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "close")
-            self.end_headers()
-            try:
-                meta = {"used": est(msgs), "budget": budget, "ctx": int(state.get("ctx") or 16384),
-                        "max_tokens": mt, "trimmed": trimmed, "think_level": tlev}
-                self.wfile.write(("data: " + json.dumps({"meta": meta}, ensure_ascii=False) + chr(10) + chr(10)).encode("utf-8"))
-                self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-            try:
-                with gen_lock:
-                    llm = state["llm"]
-                    hard_prompt = _hard_off_prompt(llm, msgs) if (tlev == "off" and name in HARD_OFF_MODELS) else None
-                    if hard_prompt:
-                        gen = llm.create_completion(prompt=hard_prompt, max_tokens=mt, stream=True,
-                                                    stop=["<|im_end|>", "<|eot_id|>"])
-                        text_mode = True
-                    else:
-                        gen = llm.create_chat_completion(messages=msgs, max_tokens=mt, stream=True)
-                        text_mode = False
-                    for chunk in gen:
-                        if text_mode:
-                            delta = chunk["choices"][0].get("text") or ""
-                        else:
-                            delta = chunk["choices"][0]["delta"].get("content") or ""
-                        if delta:
-                            self.wfile.write(("data: " + json.dumps({"delta": delta},
-                                            ensure_ascii=False) + "\n\n").encode("utf-8"))
-                            self.wfile.flush()
-                self.wfile.write(b"data: [DONE]\n\n")
-                self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-            except Exception as e:
+            client = {"ok": True}
+
+            def send_evt(obj):
+                if not client["ok"]:
+                    return
                 try:
-                    self.wfile.write(("data: " + json.dumps(
-                        {"delta": "\n[错误] " + repr(e)[:200]}, ensure_ascii=False)
-                        + "\n\n").encode("utf-8"))
+                    self.wfile.write(("data: " + json.dumps(obj, ensure_ascii=False) + chr(10) + chr(10)).encode("utf-8"))
                     self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    client["ok"] = False
                 except Exception:
-                    pass
+                    client["ok"] = False
+
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+            except Exception:
+                client["ok"] = False
+            meta = {"used": est(msgs), "budget": budget, "ctx": int(state.get("ctx") or 16384),
+                    "max_tokens": mt, "trimmed": trimmed, "think_level": tlev, "job_id": job_id}
+            send_evt({"meta": meta})
+            if conv_id and mid:
+                _update_conv_message(conv_id, mid, "", True, {"job_id": job_id})
+            job_text = ""
+            last_db = 0
+            stopped = False
+            try:
+                if state["name"] != name or state["llm"] is None:
+                    load_model(name)
+                if state["llm"] is None:
+                    raise RuntimeError("model failed to load")
+                with gen_lock:
+                    if stop_event.is_set():
+                        stopped = True
+                    else:
+                        llm = state["llm"]
+                        hard_prompt = _hard_off_prompt(llm, msgs) if (tlev == "off" and name in HARD_OFF_MODELS) else None
+                        if hard_prompt:
+                            gen = llm.create_completion(prompt=hard_prompt, max_tokens=mt, stream=True,
+                                                        stop=["<|im_end|>", "<|eot_id|>"])
+                            text_mode = True
+                        else:
+                            gen = llm.create_chat_completion(messages=msgs, max_tokens=mt, stream=True)
+                            text_mode = False
+                        for chunk in gen:
+                            if stop_event.is_set():
+                                stopped = True
+                                break
+                            if text_mode:
+                                delta = chunk["choices"][0].get("text") or ""
+                            else:
+                                delta = chunk["choices"][0]["delta"].get("content") or ""
+                            if not delta:
+                                continue
+                            job_text += delta
+                            send_evt({"delta": delta})
+                            now = time.time()
+                            if conv_id and mid and now - last_db > 0.8:
+                                last_db = now
+                                _update_conv_message(conv_id, mid, job_text, True, {"job_id": job_id})
+                final_text = _clean_reply_text(job_text) or job_text
+                if conv_id and mid:
+                    _update_conv_message(conv_id, mid, final_text, False,
+                                         {"job_id": None, "interrupted": (stopped and not final_text)})
+                if client["ok"]:
+                    try:
+                        self.wfile.write(b"data: [DONE]" + bytes([10, 10]))
+                        self.wfile.flush()
+                    except Exception:
+                        pass
+            except Exception as e:
+                final_text = _clean_reply_text(job_text) or job_text
+                if conv_id and mid:
+                    _update_conv_message(conv_id, mid, final_text, False,
+                                         {"job_id": None, "interrupted": True})
+                send_evt({"delta": chr(10) + "[错误] " + repr(e)[:200]})
             finally:
+                with stop_lock:
+                    STOP_EVENTS.pop(job_id, None)
                 with q_lock:
                     q_state["waiting"] -= 1
             return
