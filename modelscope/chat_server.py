@@ -1463,7 +1463,7 @@ function parseUISpecText(raw){
  return j;
 }
 function wantsUIExplicit(s){return /智能(界面|视图|UI)|smart\s*ui/i.test(String(s||''));}
-function uiIntent(s){return /对比|比较|vs\b|图表|柱状|折线|趋势|曲线|可视化|计算|算一下|算算|月供|利息|分摊|贷款|预算|画|绘|作图|流程|步骤/i.test(String(s||''));}
+function uiIntent(s){return /对比|比较|vs\b|图表|柱状|折线|趋势|曲线|可视化|计算|算一下|算算|月供|利息|分摊|贷款|预算|画图|画个图|画一个图|绘图|作图|流程|步骤/i.test(String(s||''));}
 async function planUI(model,question,answer){
  var r=await jpost('api/ui',{model:model,question:question,answer:answer});
  if(!r.ok)return null;
@@ -1688,8 +1688,8 @@ async function send(){
   const cleanParts=prepareUI(clean);
   const autoSpecs=(cleanParts.specs||[]).concat(cleanParts.inline||[]);
   const hasAuto=autoSpecs.length>0;
-  const wantChart=/图表|柱状|折线|趋势|曲线|可视化|chart|画|绘|作图/i.test(p);
-  const drawAny=/随便画|随便|画一个|画个/.test(p);
+  const drawAny=/随便画|随便|画个图|画一个图|画张图|画一张图/.test(p);
+  const wantChart=/图表|柱状|折线|趋势|曲线|可视化|chart|画图|画个图|画一个图|绘图|作图/i.test(p)||drawAny;
   const wantCalc=/计算|算一|算算|月供|利息|分摊|贷款|预算|公式/i.test(p);
   const hasChart=autoSpecs.some(function(s){return s&&s.type==='chart';});
   const hasCalc=autoSpecs.some(function(s){return s&&s.type==='calculator';});
@@ -1701,12 +1701,13 @@ async function send(){
    if(planned){const pn=renderUI(planned);if(pn)el.appendChild(pn);}
   }
   var hasChartNow=hasChart||(planned&&planned.type==='chart');
+  var hasSvg=/<svg[\s>]/i.test(clean)||/```svg/i.test(clean);
   var fallbackChart=null;
-  if(wantChart&&!hasChartNow){
+  if(wantChart&&!hasChartNow&&!hasSvg){
    fallbackChart=extractChartFromText(clean);
    if(fallbackChart){const fn=renderUI(fallbackChart);if(fn)el.appendChild(fn);}
   }
-  if(wantChart&&!hasChartNow&&!fallbackChart&&drawAny){
+  if(wantChart&&!hasChartNow&&!hasSvg&&!fallbackChart&&drawAny){
    fallbackChart=demoChartSpec();
    const fn=renderUI(fallbackChart);if(fn)el.appendChild(fn);
   }
