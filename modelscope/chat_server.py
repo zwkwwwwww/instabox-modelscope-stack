@@ -117,13 +117,21 @@ def think_directive(level):
         return {"role": "system", "content": "/think" + chr(10) + "思考保持适中，抓住关键点即可，不要过度展开。"}
     return {"role": "system", "content": "/think"}
 
-UI_SYSTEM_PROMPT = """你可以在正文之后附加一个“智能界面”块，让回答更直观；仅在对比、趋势、计算、流程明显有帮助时使用，最多一个，普通问答不要用。正文里不要重复使用 Markdown 表格；对比/数据优先用 compare，趋势优先 chart，计算优先 calculator。不要说无法生成图表或界面，前端会渲染。
-格式：以 ```ui 开头、``` 结尾，中间必须是严格 JSON（不能有注释或尾逗号），正文仍需完整回答。可用：
-{"type":"compare","title":"...","columns":["项目","A","B"],"rows":[["价格","...","..."]]}
-{"type":"chart","chart":"bar或line","title":"...","labels":["..."],"values":[1,2,3],"unit":"..."}
-{"type":"calculator","title":"...","fields":[{"key":"amount","label":"金额","value":100000}],"formula":"amount*0.1","unit":"元"}
-{"type":"flow","title":"...","steps":["第一步","第二步"]}
-不要输出 HTML，不要解释这个块。图表请求必须用 chart，贷款/分摊必须用 calculator；如果正文有数据表，优先把它转成组件而不是重复表格。用户说“随便画/画一个”时不要反问风格，直接给一个标题注明“示例”的 chart。数学公式用 $...$、$$...$$、\(...\) 或 \[...\]；矢量图用 ```svg 代码块输出完整 <svg viewBox="0 0 400 240">...</svg>，不要脚本、外链或 foreignObject。"""
+UI_SYSTEM_PROMPT = """你可以调用前端工具，把回答补充成交互视图。工具只在条件满足时调用，最多 2 个；普通问答不要调用。工具必须放在正文之后，正文仍然完整回答，不要在正文重复 Markdown 表格。
+调用格式：
+<tool name="render_chart">{"title":"...","labels":["A","B"],"values":[10,20],"unit":"..."}</tool>
+<tool name="render_compare">{"title":"...","columns":["项目","A","B"],"rows":[["价格","10","20"]]}</tool>
+<tool name="render_calculator">{"mode":"loan","title":"月供估算","fields":[{"key":"amount","label":"贷款金额","value":1000000},{"key":"rate","label":"年利率 %","value":4.2},{"key":"years","label":"年限","value":30}],"unit":"元"}</tool>
+<tool name="render_svg"><svg viewBox="0 0 400 240">...</svg></tool>
+<tool name="render_flow">{"title":"...","steps":["第一步","第二步"]}</tool>
+工具条件：
+- render_chart：用户要图表/柱状/折线/趋势/可视化，或回答有明显数值序列；labels 与 values 等长，values 是数字。
+- render_compare：用户要对比多个对象/参数，或回答适合用表格比较。
+- render_calculator：用户要可调计算/贷款/分摊；贷款用 mode=loan，AA/分摊用 mode=split，其他可用 formula。
+- render_svg：用户明确要 SVG/矢量图/示意图/画一个...svg；工具体内直接放完整 <svg>，不要 Markdown 代码围栏。
+- render_flow：用户要步骤/流程。
+用户说“随便画”时，用 render_svg 给一个简单示意，或用 render_chart 给标题注明“示例”的示例数据；不要反问风格。
+JSON 必须严格合法；不要输出 HTML（render_svg 里的 SVG 除外）；不需要工具时不要输出 <tool>。也可以用函数调用形式（参数为 JSON）：render_chart(["A","B"],[10,20])，不要输出其他代码。"""
 
 UI_PLANNER_PROMPT = """你是 UI 规格生成器。根据“问题”和“回答”，只输出一个 JSON 对象，不要输出解释、Markdown 代码围栏或 HTML。
 可用类型与严格格式：
@@ -1477,9 +1485,121 @@ function renderUI(spec){
  if(t==='chart')return uiChart(spec);
  if(t==='calculator')return uiCalcWidget(spec);
  if(t==='flow')return uiFlow(spec);
+ if(t==='svg'){var svg=sanitizeSvg(spec.svg);return svg?makeSvgCard(svg):null;}
  return null;
 }
 
+function splitToolCalls(text){
+ var s=String(text||""),out="",calls=[],i=0,pending=false,low=s.toLowerCase();
+ while(i<s.length){
+  var a=low.indexOf("<tool",i);
+  if(a<0){out+=s.slice(i);break;}
+  out+=s.slice(i,a);
+  var headEnd=s.indexOf(">",a);
+  if(headEnd<0){pending=true;break;}
+  var head=s.slice(a,headEnd+1);
+  var nm=head.match(/name\s*=\s*["']([^"']+)["']/i);
+  var close=low.indexOf("</tool>",headEnd+1);
+  if(!nm||close<0){pending=true;break;}
+  calls.push({name:nm[1].toLowerCase(),body:s.slice(headEnd+1,close)});
+  i=close+7;
+ }
+ var rr=extractRenderCalls(out);
+ return {text:rr.text.trim(),calls:calls.concat(rr.calls),pending:pending};
+}
+function splitArgs(s){
+ var out=[],start=0,depth=0,q=null;
+ for(var i=0;i<s.length;i++){
+  var ch=s.charAt(i);
+  if(q){if(ch===q&&s.charAt(i-1)!=="\\")q=null;continue;}
+  if(ch==="'"||ch==='"'){q=ch;continue;}
+  if(ch==="["||ch==="{"||ch==="(")depth++;
+  else if(ch==="]"||ch==="}"||ch===")")depth--;
+  else if(ch===","&&depth===0){out.push(s.slice(start,i));start=i+1;}
+ }
+ if(s.slice(start).trim())out.push(s.slice(start));
+ return out;
+}
+function parseLiteral(v){
+ var s=String(v||"").trim();
+ if(!s)return "";
+ if(s.charAt(0)==="["||s.charAt(0)==="{"){
+  var j=s.replace(/'/g,'"');
+  try{return JSON.parse(j);}catch(e){}
+ }
+ if(s.charAt(0)==="'"||s.charAt(0)==='"')return s.slice(1,-1);
+ var n=parseFloat(s);return isFinite(n)?n:s;
+}
+function scanRenderCalls(text){
+ var s=String(text||""),out="",calls=[],i=0;
+ while(i<s.length){
+  var idx=s.indexOf("render_",i);
+  if(idx<0){out+=s.slice(i);break;}
+  out+=s.slice(i,idx);
+  var p=s.indexOf("(",idx);
+  if(p<0){out+=s.slice(idx);break;}
+  var name=s.slice(idx,p).trim();
+  if(!/^render_[a-z_]+$/i.test(name)){out+=s.slice(idx,idx+7);i=idx+7;continue;}
+  var depth=0,q=null,end=-1;
+  for(var j=p;j<s.length;j++){
+   var ch=s.charAt(j);
+   if(q){if(ch===q&&s.charAt(j-1)!=="\\")q=null;}
+   else if(ch==="'"||ch==='"')q=ch;
+   else if(ch==="(")depth++;
+   else if(ch===")"){depth--;if(depth===0){end=j;break;}}
+  }
+  if(end<0){out+=s.slice(idx);break;}
+  calls.push({name:name.toLowerCase(),args:splitArgs(s.slice(p+1,end)).map(parseLiteral)});
+  i=end+1;
+ }
+ return {text:out,calls:calls};
+}
+function extractRenderCalls(text){
+ var parts=String(text||"").split("```"),calls=[],out="";
+ for(var i=0;i<parts.length;i++){
+  if(i%2===1){
+   var block=parts[i],nl=block.indexOf(String.fromCharCode(10)),lang=nl>=0?block.slice(0,nl):"",content=nl>=0?block.slice(nl+1):block;
+   if(content.indexOf("render_")>=0){
+    var r=scanRenderCalls(content);
+    if(r.calls.length){calls=calls.concat(r.calls);if(r.text.trim())out+="```"+(lang?lang+String.fromCharCode(10):"")+r.text+"```";}
+    else out+="```"+block+"```";
+   }else out+="```"+block+"```";
+  }else out+=parts[i];
+ }
+ var rest=scanRenderCalls(out);
+ return {text:rest.text,calls:calls.concat(rest.calls)};
+}
+function toolSpec(call){
+ if(!call)return null;
+ var name=call.name,body=String(call.body||"").trim();
+ if(call.args){
+  var args=call.args;
+  if(name==="render_svg"){var sv=String(args[0]||"");return sv.toLowerCase().indexOf("<svg")>=0?{type:"svg",svg:sv}:null;}
+  if(name==="render_chart"){
+   var oc=(args[0]&&typeof args[0]==="object"&&!Array.isArray(args[0]))?args[0]:{labels:args[0]||[],values:args[1]||[],title:args[2]||"数据图表",unit:args[3]||""};
+   oc.type="chart";return oc;
+  }
+  if(name==="render_compare"){
+   var om=(args[0]&&typeof args[0]==="object"&&!Array.isArray(args[0]))?args[0]:{title:args[0]||"数据对比",columns:args[1]||[],rows:args[2]||[]};
+   om.type="compare";return om;
+  }
+  if(name==="render_calculator"){var oa=args[0];if(!oa||typeof oa!=="object")return null;oa.type="calculator";return oa;}
+  if(name==="render_flow"){var of=args[0];if(Array.isArray(of))of={title:"流程",steps:of};if(!of||typeof of!=="object")return null;of.type="flow";return of;}
+  return null;
+ }
+ if(name==="render_svg"){
+  var si=body.toLowerCase().indexOf("<svg");
+  return si>=0?{type:"svg",svg:body.slice(si)}:null;
+ }
+ body=body.replace(/^```[a-z]*/i,"").replace(/```$/,"").trim();
+ var a=body.indexOf("{"),b=body.lastIndexOf("}");
+ if(a<0||b<=a)return null;
+ try{var o=JSON.parse(body.slice(a,b+1));}catch(e){return null;}
+ if(!o||typeof o!=="object")return null;
+ var map={render_chart:"chart",render_compare:"compare",render_calculator:"calculator",render_flow:"flow"};
+ var t=map[name];if(!t)return null;
+ o.type=t;return o;
+}
 function render(el,acc){
  let think='',ans=acc,thinking=false;
  const t0=acc.indexOf('<think>');
@@ -1495,9 +1615,9 @@ function render(el,acc){
  }
  el.innerHTML='';
  if(think){el.appendChild(thinkBlock(think,'💭 '+(thinking?'思考中…':'思考'),true,false));}
- var parts=splitUI(ans);
+ var parts=splitToolCalls(ans);
  const a=document.createElement('div');a.textContent=parts.text;el.appendChild(a);
- if(parts.pending||parts.specs.length){const p=document.createElement('div');p.className='iui-pending';p.textContent='智能视图生成中…';el.appendChild(p);}
+ if(parts.pending||parts.calls.length){const p=document.createElement('div');p.className='iui-pending';p.textContent='工具调用生成中…';el.appendChild(p);}
 }
 function normalizeLatex(s){
  var bs=String.fromCharCode(92);
@@ -1630,7 +1750,11 @@ function renderFinal(el,acc,knownBlock,knownInline){
  if(think){el.appendChild(thinkBlock(think,'💭 思考 · '+think.length+' 字（点击展开）',false,true));}
  var parts;
  if(Array.isArray(knownBlock)||Array.isArray(knownInline))parts={text:ans,specs:knownBlock||[],inline:knownInline||[]};
- else parts=prepareUI(ans);
+ else{
+  var tp=splitToolCalls(ans),sp=[];
+  for(var ci=0;ci<tp.calls.length;ci++){var ts=toolSpec(tp.calls[ci]);if(ts)sp.push(ts);}
+  parts={text:tp.text,specs:sp,inline:[]};
+ }
  if(parts.text)mdRender(el,parts.text);
  mountInlineUI(el,parts.inline);
  for(var i=0;i<parts.specs.length;i++){var n=renderUI(parts.specs[i]);if(n)el.appendChild(n);}
@@ -1685,37 +1809,11 @@ async function send(){
   if(ct>=0){clean=acc.slice(ct+8);}
   clean=clean.split('<think>').join('').trim();
   if(!clean){clean=acc;}
-  const cleanParts=prepareUI(clean);
-  const autoSpecs=(cleanParts.specs||[]).concat(cleanParts.inline||[]);
-  const hasAuto=autoSpecs.length>0;
-  const drawAny=/随便画|随便|画个图|画一个图|画张图|画一张图/.test(p);
-  const wantChart=/图表|柱状|折线|趋势|曲线|可视化|chart|画图|画个图|画一个图|绘图|作图/i.test(p)||drawAny;
-  const wantCalc=/计算|算一|算算|月供|利息|分摊|贷款|预算|公式/i.test(p);
-  const hasChart=autoSpecs.some(function(s){return s&&s.type==='chart';});
-  const hasCalc=autoSpecs.some(function(s){return s&&s.type==='calculator';});
-  let planned=null;
-  if(!drawAny&&(!hasAuto||(wantChart&&!hasChart)||(wantCalc&&!hasCalc))&&(wantsUIExplicit(p)||uiIntent(p)||wantChart||wantCalc)){
-   const pend=document.createElement('div');pend.className='iui-pending';pend.textContent='智能视图生成中…';el.appendChild(pend);
-   try{planned=await planUI(model,p,clean);}catch(e2){}
-   pend.remove();
-   if(planned){const pn=renderUI(planned);if(pn)el.appendChild(pn);}
-  }
-  var hasChartNow=hasChart||(planned&&planned.type==='chart');
-  var hasSvg=/<svg[\s>]/i.test(clean)||/```svg/i.test(clean);
-  var fallbackChart=null;
-  if(wantChart&&!hasChartNow&&!hasSvg){
-   fallbackChart=extractChartFromText(clean);
-   if(fallbackChart){const fn=renderUI(fallbackChart);if(fn)el.appendChild(fn);}
-  }
-  if(wantChart&&!hasChartNow&&!hasSvg&&!fallbackChart&&drawAny){
-   fallbackChart=demoChartSpec();
-   const fn=renderUI(fallbackChart);if(fn)el.appendChild(fn);
-  }
-  const hasUI=hasAuto||!!planned||!!fallbackChart;
-  const finalText=cleanParts.text||(hasUI?'（智能视图）':clean);
-  const uiBlock=cleanParts.specs.concat(planned?[planned]:[]).concat(fallbackChart?[fallbackChart]:[]);
-  const uiInline=cleanParts.inline||[];
-  updateAssistant(convId,aid,finalText,{pending:false,ui:uiBlock,uiInline:uiInline});
+  const toolParts=splitToolCalls(clean);
+  const uiBlock=[];
+  for(var ti=0;ti<toolParts.calls.length;ti++){var ts=toolSpec(toolParts.calls[ti]);if(ts)uiBlock.push(ts);}
+  const finalText=toolParts.text||(uiBlock.length?'（智能视图）':clean);
+  updateAssistant(convId,aid,finalText,{pending:false,ui:uiBlock,uiInline:[]});
   delete pendingStreams[aid];
   if(currentId===convId&&!el.isConnected){const e=addMsg('ai','');renderFinal(e,finalText,uiBlock,uiInline);}
  }catch(e){
