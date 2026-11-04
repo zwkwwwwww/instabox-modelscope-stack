@@ -7,16 +7,42 @@ from urllib.parse import urlparse, parse_qs
 
 MODELS = {
     "qwen3-30b-a3b": {"path": "/mnt/workspace/gguf/30b/Qwen3-30B-A3B-Q4_K_M.gguf",
-                      "label": "Qwen3-30B-A3B · 约7 tok/s"},
+                      "label": "Qwen3-30B-A3B · 约7 tok/s",
+                      "think_levels": ["off", "low", "medium", "high"],
+                      "think_note": "低/中为软引导"},
     "qwen3.8-27b":   {"path": "/mnt/workspace/gguf/27b/Qwen3.8-27B-Q4_K_M.gguf",
-                      "label": "Qwen3.8-27B · 约3.3 tok/s · 最强"},
+                      "label": "Qwen3.8-27B · 约3.3 tok/s · 最强",
+                      "think_levels": ["high"],
+                      "think_note": "默认深度思考，暂不支持关闭/调低"},
     "qwen3-4b":      {"path": "/mnt/workspace/gguf/4b/Qwen3-4B-Q4_K_M.gguf",
-                      "label": "Qwen3-4B · 约15-20 tok/s · 快"},
+                      "label": "Qwen3-4B · 约15-20 tok/s · 快",
+                      "think_levels": ["off", "low", "medium", "high"],
+                      "think_note": "低/中为软引导"},
     "qwen3-1.7b":    {"path": "/mnt/workspace/gguf/17b/Qwen3-1.7B-Q4_K_M.gguf",
-                      "label": "Qwen3-1.7B · 约30 tok/s · 秒回"},
+                      "label": "Qwen3-1.7B · 约30 tok/s · 秒回",
+                      "think_levels": ["off", "low", "medium", "high"],
+                      "think_note": "1.7B 档位不稳定"},
     "minicpm4.1-8b": {"path": "/mnt/workspace/gguf/minicpm41/MiniCPM4.1-8B-Q4_K_M.gguf",
-                      "label": "MiniCPM4.1-8B · 约6-9 tok/s · 高效"},
+                      "label": "MiniCPM4.1-8B · 约6-9 tok/s · 高效",
+                      "think_levels": ["off", "high"],
+                      "think_note": "仅支持关/开，低/中按高处理"},
 }
+
+DEFAULT_THINK_LEVELS = ("off", "low", "medium", "high")
+
+
+def think_levels_for(name):
+    return list((MODELS.get(name) or {}).get("think_levels") or DEFAULT_THINK_LEVELS)
+
+
+def normalize_think(name, level):
+    levels = think_levels_for(name)
+    if level in levels:
+        return level
+    if "high" in levels:
+        return "high"
+    return levels[-1] if levels else "high"
+
 IMG_MODELS = {
     "sdxl-turbo": {"path": "/mnt/workspace/img/sdxl-turbo", "label": "SDXL-Turbo · 4步 · 高质量", "steps": 4, "guidance": 0.0},
     "flux-schnell-ov": {"path": "/mnt/workspace/img/flux1-schnell-int4-ov", "label": "FLUX.1-schnell INT4 · 4步 · 最强", "steps": 4, "guidance": 0.0, "engine": "openvino"},
@@ -637,6 +663,19 @@ async function jpost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':
 function setStatus(t){$('status').textContent=t;}
 function setProg(show,pct,txt){$('progWrap').style.display=show?'flex':'none';$('progBar').style.width=(pct||0)+'%';$('progText').textContent=txt||'';}
 let refreshing=false,prevLoading=false,hideT=null,progHoldUntil=0;
+function applyThinkLevels(){
+ const m=models.find(function(x){return x.id===$('model').value;});
+ const levels=(m&&m.think_levels)||['off','low','medium','high'];
+ const note=(m&&m.think_note)||'';
+ const sel=$('thinkLevel');
+ for(const o of sel.options){
+  if(!o.dataset.base)o.dataset.base=o.textContent;
+  if(levels.indexOf(o.value)<0){o.disabled=true;o.textContent=o.dataset.base+'（不可用）';}
+  else{o.disabled=false;o.textContent=o.dataset.base+((o.value==='low'||o.value==='medium')?'（软引导）':'');}
+ }
+ sel.title=note?('思考强度 · '+note):'思考强度';
+ if(levels.indexOf(sel.value)<0){sel.value=levels.indexOf('high')>=0?'high':levels[0];}
+}
 async function refresh(){
  if(refreshing)return;
  refreshing=true;
@@ -644,7 +683,7 @@ async function refresh(){
   const s=await jget('api/status');
   models=s.models||[];loaded=s.loaded;loading=s.loading;
   const sel=$('model');
-  if(sel.options.length===0){for(const m of models){const o=document.createElement('option');o.value=m.id;o.textContent=m.label;sel.appendChild(o);}}if(loaded&&!sel.dataset.init){sel.value=loaded;sel.dataset.init='1';}
+  if(sel.options.length===0){for(const m of models){const o=document.createElement('option');o.value=m.id;o.textContent=m.label;sel.appendChild(o);}}if(loaded&&!sel.dataset.init){sel.value=loaded;sel.dataset.init='1';}applyThinkLevels();
   if(loading){
    const el=s.load_elapsed!=null?s.load_elapsed:0;
    const rp=(typeof s.load_progress==='number')?s.load_progress:null;
@@ -685,7 +724,7 @@ async function ensure(name){
  setStatus('⏳ 正在加载 '+name+'（首次约3~4分钟）…');
  await waitLoaded(name);
 }
-$('model').onchange=function(){progHoldUntil=0;setProg(false,0,'');ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';};
+$('model').onchange=function(){progHoldUntil=0;setProg(false,0,'');ctxMeta=null;$('ctxInfo').textContent='上下文 ≈ —';applyThinkLevels();};
 $('loadBtn').onclick=()=>{const m=$('model').value;ensure(m).then(()=>addMsg('sys','模型已就绪')).catch(err=>addMsg('sys','加载失败：'+err.message));};
 function render(el,acc){
  let think='',ans=acc,thinking=false;
@@ -781,7 +820,7 @@ $('setClose').onclick=function(){$('setModal').style.display='none';};
 $('setSave').onclick=async function(){
  const body={think_level:$('setThink').value,max_tokens_default:parseInt($('setMaxTok').value,10)||4096,max_queue:parseInt($('setQueue').value,10)||8,ctx_size:parseInt($('setCtx').value,10)||16384};
  const r=await fetch('api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
- if(r.ok){addMsg('sys','✅ 设置已保存（上下文长度变更需重新加载模型后生效）');$('thinkLevel').value=body.think_level;$('maxTok').value=String(body.max_tokens_default);$('setModal').style.display='none';}
+ if(r.ok){addMsg('sys','✅ 设置已保存（上下文长度变更需重新加载模型后生效）');$('thinkLevel').value=body.think_level;applyThinkLevels();$('maxTok').value=String(body.max_tokens_default);$('setModal').style.display='none';}
  else{addMsg('sys','保存失败');}
 };
 $('setPwSave').onclick=async function(){
@@ -969,7 +1008,7 @@ class H(BaseHTTPRequestHandler):
                 "load_rss_mb": state.get("load_rss_mb"),
                 "load_elapsed": (round(now - state["load_started"]) if state["load_started"] else None),
                 "last_load_seconds": state["last_load_seconds"],
-                "models": [{"id": k, "label": v["label"]} for k, v in MODELS.items()]})
+                "models": [{"id": k, "label": v["label"], "think_levels": think_levels_for(k), "think_note": v.get("think_note", "")} for k, v in MODELS.items()]})
         self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -1197,6 +1236,7 @@ class H(BaseHTTPRequestHandler):
                 tlev = "off"
             if tlev not in ("off", "low", "medium", "high"):
                 tlev = "high"
+            tlev = normalize_think(name, tlev)
             stream = bool(d.get("stream", False))
             if state["name"] != name or state["llm"] is None:
                 load_model(name)
@@ -1302,6 +1342,7 @@ class H(BaseHTTPRequestHandler):
                 tlev = "off"
             if tlev not in ("off", "low", "medium", "high"):
                 tlev = "high"
+            tlev = normalize_think(name, tlev)
             try:
                 mt = int(d.get("max_tokens") or settings.get("max_tokens_default") or 2048)
             except Exception:
@@ -1343,7 +1384,7 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             try:
                 meta = {"used": est(msgs), "budget": budget, "ctx": int(state.get("ctx") or 16384),
-                        "max_tokens": mt, "trimmed": trimmed}
+                        "max_tokens": mt, "trimmed": trimmed, "think_level": tlev}
                 self.wfile.write(("data: " + json.dumps({"meta": meta}, ensure_ascii=False) + chr(10) + chr(10)).encode("utf-8"))
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
