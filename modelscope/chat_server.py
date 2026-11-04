@@ -368,10 +368,10 @@ HTML = r"""<!doctype html><html lang="zh"><head><meta charset="utf-8">
  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei UI','PingFang SC',sans-serif;
 }
 *{box-sizing:border-box}
-html,body{height:100%}
+html,body{height:100%;height:100dvh}
 body{margin:0;background:var(--bg);color:var(--text);font:14.5px/1.6 var(--sans);overflow:hidden;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit}
-#app{display:flex;height:100vh}
+#app{display:flex;height:100vh;height:100dvh;overflow:hidden}
 
 /* ---------- sidebar ---------- */
 #sidebar{width:252px;flex:0 0 252px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 12px;gap:14px;min-height:0}
@@ -395,7 +395,7 @@ button,input,select,textarea{font:inherit}
 .side-foot .pulse{width:6px;height:6px;border-radius:50%;background:var(--accent)}
 
 /* ---------- main ---------- */
-#main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+#main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
 #bar{display:flex;align-items:center;gap:8px;padding:10px 22px;border-bottom:1px solid var(--border);background:rgba(15,16,18,.82);backdrop-filter:blur(10px);flex-wrap:wrap;min-height:54px}
 #menuBtn{display:none;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:8px;cursor:pointer}
 .ctl{appearance:none;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 9px;font-size:12.5px;outline:none;cursor:pointer;transition:border-color .15s,background .15s}
@@ -413,7 +413,7 @@ button,input,select,textarea{font:inherit}
 #progText{font:11px/1.4 var(--mono);color:var(--muted);white-space:nowrap}
 
 /* ---------- messages ---------- */
-#log{flex:1;overflow-y:auto;padding:26px 22px 40px;display:flex;flex-direction:column;gap:0;scroll-behavior:smooth}
+#log{flex:1;overflow-y:auto;padding:26px max(22px,calc((100% - 940px)/2)) 40px;display:flex;flex-direction:column;gap:0;scroll-behavior:smooth}
 #log::-webkit-scrollbar,.threads::-webkit-scrollbar{width:8px}
 #log::-webkit-scrollbar-thumb,.threads::-webkit-scrollbar-thumb{background:#2a2d32;border-radius:8px}
 #log::-webkit-scrollbar-track,.threads::-webkit-scrollbar-track{background:transparent}
@@ -447,10 +447,10 @@ button,input,select,textarea{font:inherit}
 #log:empty::after{content:'开始一个新对话  ·  本地 CPU 推理';color:var(--dim);font-size:12px;letter-spacing:.02em;text-align:center;margin:0 auto auto}
 
 /* ---------- composer ---------- */
-#inputbar{padding:12px 22px 18px;background:linear-gradient(180deg,rgba(11,12,14,0),var(--bg) 26%)}
-.composer{max-width:900px;margin:0 auto;display:flex;gap:10px;align-items:flex-end;background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:9px 9px 9px 14px;box-shadow:0 10px 35px rgba(0,0,0,.28);transition:border-color .15s}
+#inputbar{padding:12px max(22px,calc((100% - 940px)/2)) calc(18px + env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(11,12,14,0),var(--bg) 26%)}
+.composer{max-width:900px;min-width:0;margin:0 auto;display:flex;gap:10px;align-items:flex-end;background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:9px 9px 9px 14px;box-shadow:0 10px 35px rgba(0,0,0,.28);transition:border-color .15s}
 .composer:focus-within{border-color:#4a4f58}
-#prompt{flex:1;resize:none;height:40px;max-height:168px;background:transparent;border:0;color:var(--text);padding:8px 0;outline:none;line-height:1.55}
+#prompt{flex:1;min-width:0;resize:none;height:40px;max-height:168px;background:transparent;border:0;color:var(--text);padding:8px 0;outline:none;line-height:1.55}
 #prompt::placeholder{color:var(--dim)}
 #send{width:36px;height:36px;flex:0 0 36px;border:0;border-radius:10px;background:var(--text);color:#0b0c0e;font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,transform .1s}
 #send:hover{background:#fff}
@@ -459,7 +459,7 @@ button,input,select,textarea{font:inherit}
 
 /* ---------- modals ---------- */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:99;padding:20px}
-#keyBox,#setBox{background:var(--panel);border:1px solid var(--border2);border-radius:14px;padding:22px;width:min(560px,94vw);box-shadow:0 24px 70px rgba(0,0,0,.55)}
+#keyBox,#setBox{background:var(--panel);border:1px solid var(--border2);border-radius:14px;padding:22px;width:min(560px,94vw);max-height:88dvh;overflow:auto;box-shadow:0 24px 70px rgba(0,0,0,.55)}
 #keyBox h3,#setBox h3{margin:0 0 6px;font-size:15px;font-weight:650}
 #keyBox p,#setBox p{font-size:12px;color:var(--muted);margin:0 0 12px;word-break:break-all;line-height:1.6}
 #keyVal{width:100%;background:#0d0e10;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:var(--mono);font-size:12px}
@@ -472,6 +472,10 @@ button,input,select,textarea{font:inherit}
 #setBox input:focus,#setBox select:focus{border-color:#4a4f58}
 #scrim{display:none}
 
+@media(max-width:1100px){
+ #log{padding-left:22px;padding-right:22px}
+ #inputbar{padding-left:22px;padding-right:22px}
+}
 @media(max-width:900px){
  #sidebar{position:fixed;left:0;top:0;bottom:0;z-index:120;transform:translateX(-100%);transition:transform .22s ease;box-shadow:18px 0 50px rgba(0,0,0,.45)}
  body.nav-open #sidebar{transform:none}
@@ -482,10 +486,73 @@ button,input,select,textarea{font:inherit}
  #log{padding:18px 14px 30px}
  #inputbar{padding:10px 12px 14px}
  .msg.me{max-width:94%}
- #status{max-width:100%;order:10;margin-left:0}
+ #status{max-width:100%;order:10;margin-left:0;min-width:0}
  #ctxInfo{order:11}
  #model{max-width:170px}
  .hint{display:none}
+}
+
+@media(max-width:600px){
+ #bar{gap:6px;padding:8px 10px;overflow:hidden;row-gap:6px}
+ #menuBtn{order:-1;flex:0 0 32px}
+ #model{flex:1 1 auto;min-width:0;max-width:none;order:0}
+ #loadBtn{order:1}
+ #thinkLevel{order:2}
+ #maxTok{order:3}
+ #ctxInfo{order:11;margin-left:0;font-size:10px;flex:0 0 auto}
+ #status{order:10;font-size:10.5px;flex:1 1 auto;min-width:0;max-width:none;margin-left:0}
+ #log{padding:14px 12px 22px}
+ #inputbar{padding:8px 10px calc(12px + env(safe-area-inset-bottom));overflow:hidden}
+ .composer{border-radius:12px;padding:8px 8px 8px 12px}
+ #prompt{height:38px;max-height:140px}
+ #send{width:38px;height:38px;flex-basis:38px}
+ .msg{padding:14px 0}
+ .msg.me{max-width:100%;border-radius:10px;padding:12px 13px}
+ .md{font-size:14px}
+ .md pre{font-size:12px}
+ #keyBox,#setBox{width:100%;max-height:88dvh;padding:16px}
+ #setBox .field{flex-direction:column;align-items:flex-start;gap:6px}
+ #setBox select,#setBox input{width:100%}
+ #keyBox .row button,#setBox .row button{flex:1 1 auto}
+ #sidebar{width:min(282px,86vw)}
+}
+@media(max-height:620px){
+ #log{padding-top:14px;padding-bottom:20px}
+ .msg{padding:12px 0}
+ #inputbar{padding-top:8px}
+}
+@media(max-height:520px){
+ #sidebar{position:fixed;left:0;top:0;bottom:0;z-index:120;transform:translateX(-100%);transition:transform .22s ease;box-shadow:18px 0 50px rgba(0,0,0,.45)}
+ body.nav-open #sidebar{transform:none}
+ #scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:110}
+ body.nav-open #scrim{display:block}
+ #menuBtn{display:flex}
+ #log{padding-top:10px;padding-bottom:16px}
+}
+@media(hover:none){
+ .ctl,#loadBtn{min-height:40px}
+ .side-nav a,.side-nav button{padding-top:10px;padding-bottom:10px}
+}
+
+@media(max-width:600px){
+ #bar{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;overflow:visible}
+ #menuBtn{flex:0 0 32px;order:0}
+ #model{flex:1 1 calc(100% - 44px);width:100%;max-width:calc(100% - 44px);min-width:0;order:0}
+ #loadBtn{flex:0 0 auto;order:1}
+ #thinkLevel{flex:1 1 0;min-width:0;order:2}
+ #maxTok{flex:1 1 0;min-width:0;order:3}
+ #status{flex:0 0 100%;order:10;white-space:normal;line-height:1.4;max-width:100%;margin-left:0;font-size:10.5px}
+ #ctxInfo{flex:0 0 100%;order:11;font-size:10px;margin-left:0}
+ #inputbar{overflow:visible;padding:8px 10px calc(12px + env(safe-area-inset-bottom))}
+ .composer{width:100%;max-width:100%;min-width:0}
+ #prompt{flex:1 1 0;width:0;min-width:0}
+ #send{flex:0 0 38px;width:38px}
+}
+
+@media(max-width:600px){
+ .composer{display:grid;grid-template-columns:minmax(0,1fr) 38px;gap:10px;align-items:end;width:100%;max-width:100%}
+ #prompt{width:100%;min-width:0}
+ #send{width:38px;height:38px;flex:none}
 }
 </style></head><body>
 <div id="app">
