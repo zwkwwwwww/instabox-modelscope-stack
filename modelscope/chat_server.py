@@ -53,9 +53,14 @@ def _hard_off_prompt(llm, msgs):
             tpl = tpl.decode("utf-8", "replace")
         if not tpl:
             return None
-        clean = list(msgs)
-        if clean and clean[0].get("role") == "system" and str(clean[0].get("content") or "").strip() == "/no_think":
-            clean = clean[1:]
+        clean = []
+        for m in msgs:
+            if m.get("role") == "system" and str(m.get("content") or "").startswith("/no_think"):
+                rest = str(m.get("content") or "")[len("/no_think"):].strip()
+                if rest:
+                    clean.append({"role": "system", "content": rest})
+            else:
+                clean.append(m)
         from llama_cpp.llama_chat_format import Jinja2ChatFormatter
         fmt = Jinja2ChatFormatter(tpl, "<|im_end|>", "<|im_start|>", True)
         r = fmt(messages=clean, enable_thinking=False)
@@ -111,6 +116,81 @@ def think_directive(level):
     if level == "medium":
         return {"role": "system", "content": "/think" + chr(10) + "思考保持适中，抓住关键点即可，不要过度展开。"}
     return {"role": "system", "content": "/think"}
+
+UI_SYSTEM_PROMPT = """你可以在正文之后附加一个“智能界面”块，让回答更直观；仅在对比、趋势、计算、流程明显有帮助时使用，最多一个，普通问答不要用。正文里不要重复使用 Markdown 表格；对比/数据优先用 compare，趋势优先 chart，计算优先 calculator。不要说无法生成图表或界面，前端会渲染。
+格式：以 ```ui 开头、``` 结尾，中间必须是严格 JSON（不能有注释或尾逗号），正文仍需完整回答。可用：
+{"type":"compare","title":"...","columns":["项目","A","B"],"rows":[["价格","...","..."]]}
+{"type":"chart","chart":"bar或line","title":"...","labels":["..."],"values":[1,2,3],"unit":"..."}
+{"type":"calculator","title":"...","fields":[{"key":"amount","label":"金额","value":100000}],"formula":"amount*0.1","unit":"元"}
+{"type":"flow","title":"...","steps":["第一步","第二步"]}
+不要输出 HTML，不要解释这个块。图表请求必须用 chart，贷款/分摊必须用 calculator；如果正文有数据表，优先把它转成组件而不是重复表格。"""
+
+UI_PLANNER_PROMPT = """你是 UI 规格生成器。根据“问题”和“回答”，只输出一个 JSON 对象，不要输出解释、Markdown 代码围栏或 HTML。
+可用类型与严格格式：
+{"type":"compare","title":"...","columns":["项目","A","B"],"rows":[["价格","10 元","20 元"]]}
+{"type":"chart","chart":"bar 或 line","title":"...","labels":["..."],"values":[1,2],"unit":"..."}
+{"type":"calculator","mode":"loan","title":"月供估算","fields":[{"key":"amount","label":"贷款金额","value":1000000},{"key":"rate","label":"年利率 %","value":4.2},{"key":"years","label":"年限","value":30}],"unit":"元"}
+{"type":"calculator","mode":"split","title":"账单分摊","fields":[{"key":"total","label":"总金额","value":300},{"key":"people","label":"人数","value":3},{"key":"tip","label":"小费 %","value":10}],"unit":"元"}
+{"type":"calculator","title":"其他计算","fields":[{"key":"x","label":"数值","value":100}],"formula":"x*2","unit":"..."}
+{"type":"flow","title":"...","steps":["第一步","第二步"]}
+规则：
+1. 只输出 JSON 对象本身，不要 ```、解释或 HTML。
+2. labels 与 values 必须等长，values 必须是数字；数据只能来自回答，不能编造。
+3. 对比/表格用 compare；趋势/柱状/折线用 chart；贷款用 mode=loan；AA/分摊用 mode=split；其他计算才用 formula。
+4. 无法生成有效规格时输出 {"type":"none"}。"""
+
+def _ui_extract_json(text):
+    t = str(text or "")
+    i = t.rfind("</" + "think>")
+    if i >= 0:
+        t = t[i + 8:]
+    t = t.replace("```ui", "").replace("```json", "").replace("```", "").strip()
+    a = t.find("{")
+    b = t.rfind("}")
+    if a < 0 or b <= a:
+        return None
+    raw = t[a:b + 1]
+    for candidate in (raw, re.sub(r",\s*([}\]])", r"\1", raw)):
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+    return None
+
+
+def _ui_valid(spec):
+    if not isinstance(spec, dict):
+        return False
+    t = spec.get("type")
+    if t == "compare":
+        cols, rows = spec.get("columns"), spec.get("rows")
+        return (isinstance(cols, list) and len(cols) >= 2 and
+                isinstance(rows, list) and len(rows) > 0 and
+                all(isinstance(r, list) and len(r) >= 2 for r in rows))
+    if t == "chart":
+        labels, vals = spec.get("labels"), spec.get("values")
+        if not (isinstance(labels, list) and isinstance(vals, list) and len(labels) == len(vals) and len(vals) >= 2):
+            return False
+        if spec.get("chart", "bar") not in ("bar", "line"):
+            return False
+        return all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in vals)
+    if t == "calculator":
+        fields = spec.get("fields")
+        if not isinstance(fields, list) or not fields:
+            return False
+        keys = {str(f.get("key") or "") for f in fields if isinstance(f, dict)}
+        mode = spec.get("mode")
+        if mode == "loan":
+            return {"amount", "rate", "years"}.issubset(keys)
+        if mode == "split":
+            return {"total", "people", "tip"}.issubset(keys)
+        return bool(str(spec.get("formula") or "").strip())
+    if t == "flow":
+        steps = spec.get("steps")
+        return isinstance(steps, list) and len(steps) > 0
+    return False
+
+
 
 state = {"name": None, "llm": None, "loading": None,
          "load_started": None, "last_load_seconds": None,
@@ -501,6 +581,39 @@ button,input,select,textarea{font:inherit}
 .think>summary::before{content:'▸';display:inline-block;color:var(--dim);transition:transform .15s}
 .think[open]>summary::before{transform:rotate(90deg)}
 .think-body{white-space:pre-wrap;max-height:260px;overflow:auto;margin-top:8px;padding-right:4px}
+.iui{margin:14px 0 2px;border:1px solid var(--border);border-radius:12px;background:var(--card);overflow:hidden;max-width:760px}
+.iui-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border);min-width:0}
+.iui-badge{font:600 9px/1 var(--mono);letter-spacing:.08em;color:var(--accent);background:var(--accent-soft);border:1px solid rgba(158,206,106,.25);padding:3px 5px;border-radius:4px;white-space:nowrap}
+.iui-title{font-weight:600;color:var(--text);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iui-body{padding:12px}
+.iui-tablewrap{overflow:auto}
+.iui table{width:100%;border-collapse:collapse;font-size:12.5px}
+.iui th,.iui td{padding:8px 9px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;white-space:nowrap}
+.iui th{font:600 10px/1.4 var(--mono);color:var(--dim);letter-spacing:.04em;background:var(--bg)}
+.iui tbody tr:last-child td{border-bottom:0}
+.iui tbody tr:hover td{background:rgba(255,255,255,.025)}
+.iui td.iui-k{color:var(--muted)}
+.iui-svg{display:block;width:100%;height:auto;overflow:visible}
+.iui-svg text{fill:var(--dim);font:10px var(--mono)}
+.iui-svg .iui-val{fill:var(--muted);font-size:10px}
+.iui-svg .iui-bar{fill:rgba(158,206,106,.72)}
+.iui-svg .iui-line{fill:none;stroke:var(--accent);stroke-width:2}
+.iui-svg .iui-dot{fill:var(--accent);stroke:var(--card);stroke-width:2}
+.iui-field{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0}
+.iui-field label{font-size:12px;color:var(--muted)}
+.iui-field input{width:132px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 8px;font:12px var(--mono);outline:none}
+.iui-field input:focus{border-color:var(--border2)}
+.iui-result{margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--bg);font:600 17px/1.3 var(--mono);color:var(--accent)}
+.iui-note{font-size:10.5px;color:var(--dim);margin-top:6px}
+.iui-flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.iui-step{padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:12px;color:var(--text)}
+.iui-arrow{color:var(--dim);font-size:12px}
+.iui-pending{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;color:var(--dim);font:10.5px var(--mono)}
+.iui-pending::before{content:'✦';color:var(--accent)}
+@media(max-width:600px){.iui-body{padding:10px}.iui th,.iui td{padding:7px}.iui-field input{width:112px}}
+
+.md{white-space:normal}
+
 .md{line-height:1.75;font-size:14.5px}
 .md h1,.md h2,.md h3,.md h4{margin:18px 0 8px;line-height:1.3;font-weight:650;letter-spacing:-.01em}
 .md h1{font-size:1.42em}.md h2{font-size:1.24em}.md h3{font-size:1.1em}
@@ -708,7 +821,7 @@ const $=id=>document.getElementById(id);
 let models=[],loaded=null,loading=null;
 let history=[];
 const CONV_KEY='muse_convs_v1';
-let convs=[],currentId=null;
+let convs=[],currentId=null,lastUserPrompt='';
 function uid(){return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function makeTitle(s){
  s=String(s||'');
@@ -870,7 +983,7 @@ function initConvs(){
  var c=currentConv();history=(c.messages||[]).slice();
  renderThreads();restoreHist();
 }
-function restoreHist(){for(const m of history){if(m.role==='user')addMsg('me',m.content);else if(m.role==='assistant'){const el=addMsg('ai','');renderFinal(el,m.content);}}}
+function restoreHist(){for(const m of history){if(m.role==='user')addMsg('me',m.content);else if(m.role==='assistant'){const el=addMsg('ai','');renderFinal(el,m.content,m.ui||[],m.uiInline||[]);}}}
 function addMsg(kind,text){const d=document.createElement('div');d.className='msg '+kind;d.textContent=text;$('log').appendChild(d);$('log').scrollTop=$('log').scrollHeight;return d;}
 async function jget(u){const r=await fetch(u,{cache:'no-store'});return r.json();}
 async function jpost(u,b){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});}
@@ -949,6 +1062,350 @@ function thinkBlock(text,label,open,final){
  if(final){d.addEventListener('toggle',function(){s.textContent='💭 思考 · '+text.length+' 字'+(d.open?'（点击收起）':'（点击展开）');});}
  return d;
 }
+function uiPlainPrompt(s){
+ return String(s||'')
+  .replace(/[，,。.]?\s*(请)?(用|使用)\s*智能(界面|视图|UI)\s*(来)?\s*(展示|显示|呈现|给出)?/gi,'')
+  .replace(/[，,。.]?\s*智能(界面|视图)\s*(展示|显示|呈现|给出)/gi,'')
+  .replace(/\s{2,}/g,' ')
+  .trim();
+}
+function plainForModel(m){
+ var c=(m.role==='user')?(uiPlainPrompt(m.content)||m.content):String(m.content||'');
+ return c.replace(/@@IUI[0-9]+@@/g,'').trim();
+}
+function uiNode(tag,cls,text){
+ var e=document.createElement(tag);
+ if(cls)e.className=cls;
+ if(text!==undefined&&text!==null)e.textContent=String(text);
+ return e;
+}
+function uiFmt(n){
+ var v=Number(n);
+ if(!isFinite(v))return '—';
+ var a=Math.abs(v);
+ if(a>=1000)return v.toLocaleString('zh-CN',{maximumFractionDigits:2});
+ return String(Math.round(v*100)/100);
+}
+function splitUI(s){
+ var text=String(s||''),specs=[];
+ text=text.replace(/```ui[ \t]*\r?\n?([\s\S]*?)```/gi,function(_,body){
+  var t=String(body).trim();
+  try{var j=JSON.parse(t);if(j&&typeof j==='object')specs.push(j);}catch(e){
+   try{var j2=JSON.parse(t.replace(/,\s*([}\]])/g,'$1'));if(j2&&typeof j2==='object')specs.push(j2);}catch(e2){}
+  }
+  return '';
+ });
+ var pending=/```ui[\s\S]*$/i.test(text);
+ if(pending)text=text.replace(/```ui[\s\S]*$/i,'');
+ return {text:text.trim(),specs:specs,pending:pending};
+}
+function mdCell(s){return String(s||'').replace(/\*\*/g,'').replace(/`/g,'').trim();}
+function mdCells(line){
+ var s=String(line).trim();
+ if(s.charAt(0)==='|')s=s.slice(1);
+ if(s.charAt(s.length-1)==='|')s=s.slice(0,-1);
+ return s.split('|').map(mdCell);
+}
+function numCell(s){
+ var m=String(s||'').replace(/[,\s]/g,'').match(/-?\d+(?:\.\d+)?/);
+ return m?parseFloat(m[0]):null;
+}
+function wantsChart(){
+ var p=(typeof lastUserPrompt!=='undefined')?lastUserPrompt:'';
+ return /图表|柱状|折线|趋势|曲线|可视化|chart|graph/i.test(p);
+}
+function extractMdTables(text){
+ var lines=String(text||'').split('\n'),out=[],inline=[],seen={},i=0;
+ function isSep(l){return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(l);}
+ while(i<lines.length){
+  if(lines[i].indexOf('|')>=0&&i+1<lines.length&&isSep(lines[i+1])){
+   var cols=mdCells(lines[i]),rows=[],j=i+2;
+   while(j<lines.length&&lines[j].trim()&&lines[j].indexOf('|')>=0){rows.push(mdCells(lines[j]));j++;}
+   if(cols.length>=2&&rows.length){
+    var title='数据对比',titleIdx=-1;
+    for(var k=out.length-1;k>=0;k--){var l=out[k].trim();if(!l)continue;if(/^#{1,6}\s+/.test(l)){title=mdCell(l.replace(/^#{1,6}\s+/,''));titleIdx=k;}break;}
+    if(titleIdx>=0)out[titleIdx]='';
+    var spec={type:'compare',title:title,columns:cols,rows:rows.slice(0,30)};
+    if(wantsChart()&&cols.length===2&&rows.length>=2){
+     var labels=[],vals=[];
+     for(var rr=0;rr<rows.length;rr++){var vv=numCell(rows[rr][1]);if(vv!==null){labels.push(mdCell(rows[rr][0]));vals.push(vv);}}
+     if(vals.length>=2)spec={type:'chart',chart:'bar',title:title,labels:labels,values:vals};
+    }
+    var sk=JSON.stringify(spec);
+    if(!seen[sk]){seen[sk]=1;out.push('@@IUI'+inline.length+'@@');inline.push(spec);}
+    i=j;continue;
+   }
+  }
+  out.push(lines[i]);i++;
+ }
+ return {text:out.join('\n').replace(/\n{3,}/g,'\n\n').trim(),inline:inline};
+}
+function prepareUI(text){
+ var p=splitUI(text);
+ if(!p.specs.length){var a=extractMdTables(p.text);p.text=a.text;p.inline=a.inline;}
+ return p;
+}
+function replaceUIToken(el,token,node){
+ if(!el)return false;
+ var walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,null,false);
+ while(walker.nextNode()){
+  var n=walker.currentNode,pos=n.nodeValue.indexOf(token);
+  if(pos<0)continue;
+  var parent=n.parentNode;
+  if(parent&&parent.tagName==='P'&&parent.textContent.trim()===token){parent.parentNode.replaceChild(node,parent);}
+  else{
+   var frag=document.createDocumentFragment();
+   var before=n.nodeValue.slice(0,pos),after=n.nodeValue.slice(pos+token.length);
+   if(before)frag.appendChild(document.createTextNode(before));
+   frag.appendChild(node);
+   if(after)frag.appendChild(document.createTextNode(after));
+   parent.replaceChild(frag,n);
+  }
+  return true;
+ }
+ return false;
+}
+function mountInlineUI(el,specs){
+ if(!Array.isArray(specs))return;
+ for(var i=0;i<specs.length;i++){
+  var n=renderUI(specs[i]);if(!n)continue;
+  if(!replaceUIToken(el,'@@IUI'+i+'@@',n))el.appendChild(n);
+ }
+}
+function uiCalc(formula,vars){
+ var s=String(formula||'').replace(/\s+/g,'');
+ var i=0;
+ function peek(){return s.charAt(i);}
+ function parseExpr(){
+  var v=parseTerm();
+  while(peek()==='+'||peek()==='-'){
+   var op=s.charAt(i++);
+   var r=parseTerm();
+   v=op==='+'?v+r:v-r;
+  }
+  return v;
+ }
+ function parseTerm(){
+  var v=parsePower();
+  while(peek()==='*'||peek()==='/'||peek()==='%'){
+   var op=s.charAt(i++);
+   var r=parsePower();
+   if(op==='*')v*=r;
+   else if(op==='/')v/=r;
+   else v%=r;
+  }
+  return v;
+ }
+ function parsePower(){
+  var v=parseUnary();
+  if(peek()==='^'){i++;var r=parsePower();v=Math.pow(v,r);}
+  return v;
+ }
+ function parseUnary(){
+  if(peek()==='+'){i++;return parseUnary();}
+  if(peek()==='-'){i++;return -parseUnary();}
+  return parsePrimary();
+ }
+ function parsePrimary(){
+  if(peek()==='('){
+   i++;
+   var v=parseExpr();
+   if(peek()!==')')throw new Error('paren');
+   i++;
+   return v;
+  }
+  var m=/^\d+(?:\.\d+)?/.exec(s.slice(i));
+  if(m){i+=m[0].length;return parseFloat(m[0]);}
+  var n=/^[A-Za-z_][A-Za-z0-9_]*/.exec(s.slice(i));
+  if(n){
+   i+=n[0].length;
+   if(Object.prototype.hasOwnProperty.call(vars,n[0]))return Number(vars[n[0]])||0;
+   throw new Error('var');
+  }
+  throw new Error('token');
+ }
+ var v=parseExpr();
+ if(i!==s.length||!isFinite(v))throw new Error('parseExpr');
+ return v;
+}
+function uiShell(spec,body){
+ var wrap=uiNode('div','iui');
+ var head=uiNode('div','iui-head');
+ head.appendChild(uiNode('span','iui-badge','✦ 智能视图'));
+ if(spec.title)head.appendChild(uiNode('span','iui-title',spec.title));
+ wrap.appendChild(head);
+ var b=uiNode('div','iui-body');
+ b.appendChild(body);
+ wrap.appendChild(b);
+ return wrap;
+}
+function uiCompare(spec){
+ var cols=Array.isArray(spec.columns)?spec.columns.slice(0,8):[];
+ var rows=Array.isArray(spec.rows)?spec.rows.slice(0,30):[];
+ if(!cols.length||!rows.length)return null;
+ var table=document.createElement('table');
+ var thead=document.createElement('thead');
+ var htr=document.createElement('tr');
+ for(var i=0;i<cols.length;i++)htr.appendChild(uiNode('th','',cols[i]));
+ thead.appendChild(htr);table.appendChild(thead);
+ var tb=document.createElement('tbody');
+ for(var r=0;r<rows.length;r++){
+  var tr=document.createElement('tr');
+  var cells=Array.isArray(rows[r])?rows[r]:[];
+  for(var c=0;c<cells.length;c++){
+   var td=uiNode('td',c===0?'iui-k':'',cells[c]);
+   tr.appendChild(td);
+  }
+  tb.appendChild(tr);
+ }
+ table.appendChild(tb);
+ var wrap=uiNode('div','iui-tablewrap');
+ wrap.appendChild(table);
+ return uiShell(spec,wrap);
+}
+function uiSvg(tag,attrs){
+ var e=document.createElementNS('http://www.w3.org/2000/svg',tag);
+ for(var k in attrs)if(Object.prototype.hasOwnProperty.call(attrs,k))e.setAttribute(k,attrs[k]);
+ return e;
+}
+function uiChart(spec){
+ var labels=Array.isArray(spec.labels)?spec.labels.map(String):[];
+ var vals=Array.isArray(spec.values)?spec.values.map(Number):[];
+ if(!vals.length||labels.length!==vals.length||vals.length>40)return null;
+ for(var q=0;q<vals.length;q++)if(!isFinite(vals[q]))return null;
+ var unit=spec.unit?String(spec.unit):'';
+ var kind=String(spec.chart||'bar').toLowerCase()==='line'?'line':'bar';
+ var W=640,H=260,pl=46,pr=18,pt=18,pb=38;
+ var plotW=W-pl-pr,plotH=H-pt-pb;
+ var max=Math.max.apply(null,vals.concat([0]));
+ var min=Math.min.apply(null,vals.concat([0]));
+ if(max===min)max=min+1;
+ var x=function(idx){return vals.length===1?pl+plotW/2:pl+plotW*idx/(vals.length-1);};
+ var y=function(v){return pt+plotH*(1-(v-min)/(max-min));};
+ var svg=uiSvg('svg',{viewBox:'0 0 '+W+' '+H,class:'iui-svg'});
+ for(var g=0;g<=4;g++){
+  var gy=pt+plotH*g/4;
+  svg.appendChild(uiSvg('line',{x1:pl,y1:gy,x2:W-pr,y2:gy,stroke:'#232529','stroke-width':1}));
+  var txt=uiSvg('text',{x:pl-8,y:gy+3,'text-anchor':'end'});
+  txt.textContent=uiFmt(max-(max-min)*g/4);
+  svg.appendChild(txt);
+ }
+ for(var i=0;i<labels.length;i++){
+  var lab=labels[i]||'';
+  if(lab.length>10)lab=lab.slice(0,9)+'…';
+  var lx=kind==='bar'?(pl+plotW*(i+0.5)/vals.length):x(i);
+  var ltxt=uiSvg('text',{x:lx,y:H-14,'text-anchor':'middle'});
+  ltxt.textContent=lab;
+  svg.appendChild(ltxt);
+ }
+ if(kind==='bar'){
+  var bw=Math.min(54,plotW/vals.length*0.58);
+  for(var b=0;b<vals.length;b++){
+   var bx=pl+plotW*(b+0.5)/vals.length-bw/2;
+   var y0=y(0),yv=y(vals[b]);
+   var top=Math.min(y0,yv),bh=Math.max(1,Math.abs(y0-yv));
+   var rect=uiSvg('rect',{x:bx,y:top,width:bw,height:bh,rx:4,class:'iui-bar'});
+   var tip=uiSvg('title',{});
+   tip.textContent=(labels[b]||'')+'：'+uiFmt(vals[b])+unit;
+   rect.appendChild(tip);svg.appendChild(rect);
+   if(vals.length<=8){
+    var vt=uiSvg('text',{x:bx+bw/2,y:top-5,'text-anchor':'middle',class:'iui-val'});
+    vt.textContent=uiFmt(vals[b]);
+    svg.appendChild(vt);
+   }
+  }
+ }else{
+  var pts=[];
+  for(var p=0;p<vals.length;p++)pts.push([x(p),y(vals[p])]);
+  var d=pts.map(function(pt,idx){return (idx?'L':'M')+pt[0].toFixed(1)+' '+pt[1].toFixed(1);}).join(' ');
+  svg.appendChild(uiSvg('path',{d:d,class:'iui-line'}));
+  for(var c=0;c<pts.length;c++){
+   var dot=uiSvg('circle',{cx:pts[c][0],cy:pts[c][1],r:4,class:'iui-dot'});
+   var dt=uiSvg('title',{});
+   dt.textContent=(labels[c]||'')+'：'+uiFmt(vals[c])+unit;
+   dot.appendChild(dt);svg.appendChild(dot);
+  }
+ }
+ return uiShell(spec,svg);
+}
+function uiCalcWidget(spec){
+ var fields=Array.isArray(spec.fields)?spec.fields.slice(0,8):[];
+ var mode=String(spec.mode||'');
+ var formula=String(spec.formula||'');
+ if(mode==='loan')formula='amount*(rate/1200)/(1-(1+rate/1200)^(-years*12))';
+ else if(mode==='split')formula='total*(1+tip/100)/people';
+ var unit=spec.unit?String(spec.unit):'';
+ var wrap=uiNode('div','');
+ var inputs={};
+ function update(){
+  var vars={};
+  for(var k in inputs)if(Object.prototype.hasOwnProperty.call(inputs,k))vars[k]=parseFloat(inputs[k].value)||0;
+  try{out.textContent=uiFmt(uiCalc(formula,vars))+(unit?(' '+unit):'');}
+  catch(e){out.textContent='无法计算';}
+ }
+ for(var i=0;i<fields.length;i++){
+  var f=fields[i];
+  if(!f||typeof f!=='object')continue;
+  var key=String(f.key||'');
+  if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))continue;
+  var row=uiNode('div','iui-field');
+  row.appendChild(uiNode('label','',f.label||key));
+  var inp=document.createElement('input');
+  inp.type='number';inp.step='any';inp.value=(f.value!==undefined?f.value:0);
+  inp.oninput=update;
+  row.appendChild(inp);wrap.appendChild(row);inputs[key]=inp;
+ }
+ var out=uiNode('div','iui-result','—');
+ wrap.appendChild(out);
+ wrap.appendChild(uiNode('div','iui-note',mode==='loan'?'等额本息 · 本地计算':(mode==='split'?'账单分摊 · 本地计算':'本地计算 · 不调用模型')));
+ update();
+ return uiShell(spec,wrap);
+}
+function uiFlow(spec){
+ var steps=Array.isArray(spec.steps)?spec.steps.slice(0,20):[];
+ if(!steps.length)return null;
+ var wrap=uiNode('div','iui-flow');
+ for(var i=0;i<steps.length;i++){
+  if(i)wrap.appendChild(uiNode('span','iui-arrow','→'));
+  var s=steps[i];
+  var label=(s&&typeof s==='object')?(s.title||s.text||''):s;
+  wrap.appendChild(uiNode('div','iui-step',label));
+ }
+ return uiShell(spec,wrap);
+}
+function parseUISpecText(raw){
+ var t=String(raw||'');
+ var ti=t.lastIndexOf('</think>');
+ if(ti>=0)t=t.slice(ti+8);
+ t=t.replace(/```(?:ui|json)?/gi,'').trim();
+ var a=t.indexOf('{'),b=t.lastIndexOf('}');
+ if(a<0||b<=a)return null;
+ var body=t.slice(a,b+1);
+ var j=null;
+ try{j=JSON.parse(body);}catch(e){
+  try{j=JSON.parse(body.replace(/,\s*([}\]])/g,'$1'));}catch(e2){return null;}
+ }
+ if(!j||['compare','chart','calculator','flow'].indexOf(String(j.type))<0)return null;
+ return j;
+}
+function wantsUIExplicit(s){return /智能(界面|视图|UI)|smart\s*ui/i.test(String(s||''));}
+function uiIntent(s){return /对比|比较|vs\b|图表|柱状|折线|趋势|曲线|可视化|计算|算一下|算算|月供|利息|分摊|贷款|预算|画.*图|流程|步骤/i.test(String(s||''));}
+async function planUI(model,question,answer){
+ var r=await jpost('api/ui',{model:model,question:question,answer:answer});
+ if(!r.ok)return null;
+ var j=await r.json();
+ return j.spec || parseUISpecText(j.text||'');
+}
+function renderUI(spec){
+ if(!spec||typeof spec!=='object')return null;
+ var t=String(spec.type||'');
+ if(t==='compare')return uiCompare(spec);
+ if(t==='chart')return uiChart(spec);
+ if(t==='calculator')return uiCalcWidget(spec);
+ if(t==='flow')return uiFlow(spec);
+ return null;
+}
+
 function render(el,acc){
  let think='',ans=acc,thinking=false;
  const t0=acc.indexOf('<think>');
@@ -964,7 +1421,9 @@ function render(el,acc){
  }
  el.innerHTML='';
  if(think){el.appendChild(thinkBlock(think,'💭 '+(thinking?'思考中…':'思考'),true,false));}
- const a=document.createElement('div');a.textContent=ans;el.appendChild(a);
+ var parts=splitUI(ans);
+ const a=document.createElement('div');a.textContent=parts.text;el.appendChild(a);
+ if(parts.pending||parts.specs.length){const p=document.createElement('div');p.className='iui-pending';p.textContent='智能视图生成中…';el.appendChild(p);}
 }
 function escapeForMd(s){return s.split('&').join('&amp;').split('<').join('&lt;');}
 function mdRender(el,ans){
@@ -974,13 +1433,19 @@ function mdRender(el,ans){
  const a=document.createElement('div');a.className='md';a.innerHTML=html;el.appendChild(a);
  if(window.renderMathInElement){try{renderMathInElement(a,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});}catch(e){}}
 }
-function renderFinal(el,acc){
+function renderFinal(el,acc,knownBlock,knownInline){
  let think='',ans=acc;
  const t1=acc.indexOf('</think>');
  if(t1>=0){const t0=acc.lastIndexOf('<think>',t1);think=acc.slice(t0>=0?t0+7:0,t1);ans=acc.slice(t1+8);}
  el.innerHTML='';
  if(think){el.appendChild(thinkBlock(think,'💭 思考 · '+think.length+' 字（点击展开）',false,true));}
- mdRender(el,ans);
+ var parts;
+ if(Array.isArray(knownBlock)||Array.isArray(knownInline))parts={text:ans,specs:knownBlock||[],inline:knownInline||[]};
+ else parts=prepareUI(ans);
+ if(parts.text)mdRender(el,parts.text);
+ mountInlineUI(el,parts.inline);
+ for(var i=0;i<parts.specs.length;i++){var n=renderUI(parts.specs[i]);if(n)el.appendChild(n);}
+ return parts;
 }
 let ctxMeta=null;
 function setCtxMeta(m){ctxMeta=m;}
@@ -996,15 +1461,15 @@ function renderCtx(extraChars){
 }
 async function send(){
  const model=$('model').value,p=$('prompt').value.trim();if(!p)return;
- const convId=currentId;
+ lastUserPrompt=p;const convId=currentId;
  $('prompt').value='';addMsg('me',p);
  appendToConv(convId,{role:'user',content:p});
- const reqMsgs=history.slice();
+ const reqMsgs=history.map(function(m){return {role:m.role,content:plainForModel(m)};});
  try{
   await ensure(model);
   try{const q=await (await fetch('api/queue')).json(); if(q.busy||q.waiting>0){addMsg('sys','⏳ 服务器正忙，请求已排队'+(q.waiting?('（前面还有 '+q.waiting+' 个）'):'')+'，请耐心等待…');}}catch(e){}
   const el=addMsg('ai','');
-  const resp=await jpost('api/chat',{model:model,messages:reqMsgs,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10)});
+  const resp=await jpost('api/chat',{model:model,messages:reqMsgs,think_level:$('thinkLevel').value,max_tokens:parseInt($('maxTok').value,10),intelligent_ui:true});
   if(!resp.ok){el.textContent='请求失败：'+await resp.text();removeLastUser(convId);return;}
   const reader=resp.body.getReader(),dec=new TextDecoder();
   let acc='',buf='';
@@ -1025,7 +1490,23 @@ async function send(){
   if(ct>=0){clean=acc.slice(ct+8);}
   clean=clean.split('<think>').join('').trim();
   if(!clean){clean=acc;}
-  appendToConv(convId,{role:'assistant',content:clean});
+  const cleanParts=prepareUI(clean);
+  const autoSpecs=(cleanParts.specs||[]).concat(cleanParts.inline||[]);
+  const hasAuto=autoSpecs.length>0;
+  const wantChart=/图表|柱状|折线|趋势|曲线|可视化|chart/i.test(p);
+  const wantCalc=/计算|算一|算算|月供|利息|分摊|贷款|预算|公式/i.test(p);
+  const hasChart=autoSpecs.some(function(s){return s&&s.type==='chart';});
+  const hasCalc=autoSpecs.some(function(s){return s&&s.type==='calculator';});
+  let planned=null;
+  if((!hasAuto||(wantChart&&!hasChart)||(wantCalc&&!hasCalc))&&(wantsUIExplicit(p)||uiIntent(p)||wantChart||wantCalc)){
+   const pend=document.createElement('div');pend.className='iui-pending';pend.textContent='智能视图生成中…';el.appendChild(pend);
+   try{planned=await planUI(model,p,clean);}catch(e2){}
+   pend.remove();
+   if(planned){const pn=renderUI(planned);if(pn)el.appendChild(pn);}
+  }
+  const hasUI=hasAuto||!!planned;
+  const finalText=cleanParts.text||(hasUI?'（智能视图）':clean);
+  appendToConv(convId,{role:'assistant',content:finalText,ui:cleanParts.specs.concat(planned?[planned]:[]),uiInline:cleanParts.inline||[]});
   if(currentId===convId&&!el.isConnected){const e=addMsg('ai','');renderFinal(e,acc);}
  }catch(e){if(currentId===convId)addMsg('sys','出错：'+e.message);}
 }
@@ -1505,6 +1986,9 @@ class H(BaseHTTPRequestHandler):
             if not any(m["role"] == "user" for m in msgs):
                 return self.send_json(400, {"error": {"message": "no user message", "type": "invalid_request_error"}})
             msgs = [think_directive(tlev)] + msgs
+            if d.get("intelligent_ui"):
+                base = str(msgs[0].get("content") or "")
+                msgs[0] = {"role": "system", "content": base + (chr(10) + chr(10) if base else "") + UI_SYSTEM_PROMPT}
             budget = max(512, int((state.get("ctx") or 16384)) - mt - 300)
 
             def est(ml):
@@ -1528,6 +2012,13 @@ class H(BaseHTTPRequestHandler):
                 self.send_header("Cache-Control", "no-cache")
                 self.send_header("Connection", "close")
                 self.end_headers()
+                try:
+                    hello = {"id": cid, "object": "chat.completion.chunk", "created": created, "model": name,
+                             "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": None}]}
+                    self.wfile.write(("data: " + json.dumps(hello, ensure_ascii=False) + NL2).encode("utf-8"))
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
                 try:
                     with gen_lock:
                         llm = state["llm"]
@@ -1695,6 +2186,35 @@ class H(BaseHTTPRequestHandler):
                 with q_lock:
                     q_state["waiting"] -= 1
             return
+        if self.path.startswith("/api/ui"):
+            name = d.get("model")
+            q = str(d.get("question") or "").strip()[:2000]
+            a = str(d.get("answer") or "").strip()[:6000]
+            if name not in MODELS or not q or not a:
+                return self.send_json(400, {"error": "model/question/answer required"})
+            if state["name"] != name or state["llm"] is None:
+                return self.send_json(409, {"error": "model not loaded"})
+            try:
+                spec = None
+                txt = ""
+                with gen_lock:
+                    llm = state["llm"]
+                    for attempt in range(2):
+                        prompt = UI_PLANNER_PROMPT + chr(10) + "问题：" + q + chr(10) + "回答：" + a
+                        if attempt:
+                            prompt += (chr(10) + chr(10) + "上一次输出无法解析或不符合 schema：" +
+                                       str(txt)[:500] + chr(10) + "请重新只输出一个合法 JSON 对象。")
+                        msgs = [{"role": "system", "content": "/no_think"},
+                                {"role": "user", "content": prompt}]
+                        res = llm.create_chat_completion(messages=msgs, max_tokens=420, temperature=0.1)
+                        txt = (res["choices"][0].get("message") or {}).get("content") or ""
+                        spec = _ui_extract_json(txt)
+                        if _ui_valid(spec):
+                            break
+                        spec = None
+                return self.send_json(200, {"text": txt, "spec": spec})
+            except Exception as e:
+                return self.send_json(500, {"error": repr(e)[:200]})
         self.send_json(404, {"error": "not found"})
 
 
