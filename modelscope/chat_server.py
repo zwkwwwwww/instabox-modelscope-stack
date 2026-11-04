@@ -2256,7 +2256,7 @@ $('keyRotate').onclick=async function(){
  else{addMsg('sys','重置失败：'+(j.error||'未知错误'));}
 };
 /* ---------- image subpage ---------- */
-var IG={inited:false,models:[],timer:null,busy:false,url:null,t0:0,warmTries:0};
+var IG={inited:false,models:[],timer:null,busy:false,url:null,t0:0,warmSeq:0,warmSince:0};
 function isImgMode(){return location.hash==='#img'||location.hash==='#/img';}
 function applyRoute(){
  var img=isImgMode(),main=$('main');if(!main)return;
@@ -2264,7 +2264,7 @@ function applyRoute(){
  var b=$('imgBtn');if(b)b.classList.toggle('active',img);
  document.body.classList.remove('nav-open');
  document.title=img?'生图 · 魔搭 Chat':'魔搭 Chat';
- if(img)initImage();
+ if(img)enterImage();else stopWarmLoop();
 }
 function goImage(){
  if(isImgMode()){applyRoute();return;}
@@ -2274,7 +2274,18 @@ function goChat(){
  if(isImgMode()){
   try{window.history.replaceState(null,'',location.pathname+location.search);}catch(e){location.hash='';}
  }
+ stopWarmLoop();
  applyRoute();
+}
+function enterImage(){
+ if(!IG.inited){initImage();return;}
+ startWarmLoop();refreshWarm();
+ if(IG.busy)return;
+ if(sending||loading){
+  $('igStatus').textContent='聊天模型忙，暂不预热；完成后可点「预热模型」';
+  return;
+ }
+ preloadImage();
 }
 function hideIgResult(){
  var r=$('igResult');if(r)r.hidden=true;
@@ -2307,52 +2318,58 @@ async function initImage(){
   else preloadImage();
  }catch(e){$('igStatus').textContent='读取生图模型失败：'+e.message;}
 }
+function showIgWarmProg(text){
+ if(IG.busy)return;
+ $('igProgWrap').style.display='flex';
+ $('igProgBar').classList.add('indet');
+ $('igProgBar').style.width='35%';
+ $('igProgText').textContent=text||'加载模型';
+}
+function hideIgWarmProg(){
+ if(IG.busy)return;
+ $('igProgWrap').style.display='none';
+ $('igProgBar').classList.remove('indet');
+ $('igProgBar').style.width='0%';
+ $('igProgText').textContent='';
+}
+function startWarmLoop(){
+ if(IG.timer)return;
+ IG.timer=setInterval(refreshWarm,3000);
+}
+function stopWarmLoop(){
+ IG.warmSeq++;
+ if(IG.timer){clearInterval(IG.timer);IG.timer=null;}
+}
 function preloadImage(){
  var mm=$('igModel').value;if(!mm)return;
- IG.warmTries=0;
  $('igWarm').textContent='准备预热…';
  fetch('api/image/preload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:mm})}).catch(function(){});
- pollIgWarm();
+ startWarmLoop();
+ refreshWarm();
 }
-function pollIgWarm(){
- if(IG.timer)clearInterval(IG.timer);
- IG.timer=setInterval(async function(){
-  try{
-   var j=await (await fetch('api/image/warm')).json();
-   var w=$('igWarm'),want=$('igModel').value;
-   if(j.loading){
-    IG.warmTries=0;
-    w.textContent='🔥 正在预热：'+j.loading;
-    if(!IG.busy){
-     $('igProgWrap').style.display='flex';
-     $('igProgBar').classList.add('indet');
-     $('igProgBar').style.width='35%';
-     $('igProgText').textContent='加载模型';
-    }
-   }else if(j.loaded&&j.loaded===want){
-    w.textContent='✅ 已预热：'+j.loaded;
-    $('igProgBar').classList.remove('indet');
-    if(!IG.busy){
-     $('igProgWrap').style.display='none';
-     $('igProgBar').style.width='0%';
-     $('igProgText').textContent='';
-    }
-    clearInterval(IG.timer);IG.timer=null;
-   }else if(IG.warmTries<6){
-    IG.warmTries++;
-    w.textContent='等待预热…';
-   }else{
-    w.textContent=j.loaded?('已加载：'+j.loaded):'预热：—';
-    $('igProgBar').classList.remove('indet');
-    if(!IG.busy){
-     $('igProgWrap').style.display='none';
-     $('igProgBar').style.width='0%';
-     $('igProgText').textContent='';
-    }
-    clearInterval(IG.timer);IG.timer=null;
-   }
-  }catch(e){clearInterval(IG.timer);IG.timer=null;}
- },2500);
+async function refreshWarm(){
+ var want=$('igModel').value;if(!want)return;
+ var seq=++IG.warmSeq;
+ var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+ var to=setTimeout(function(){if(ctrl)ctrl.abort();},8000);
+ try{
+  var r=await fetch('api/image/warm',{cache:'no-store',signal:ctrl?ctrl.signal:undefined});
+  var j=await r.json();
+  clearTimeout(to);
+  if(seq!==IG.warmSeq)return;
+  var w=$('igWarm');
+  if(j.loading){
+   if(!IG.warmSince)IG.warmSince=Date.now();
+   w.textContent='🔥 正在预热：'+j.loading;
+   showIgWarmProg('加载 '+j.loading+' · '+Math.round((Date.now()-IG.warmSince)/1000)+'s');
+  }else{
+   IG.warmSince=0;
+   hideIgWarmProg();
+   if(j.loaded===want)w.textContent='✅ 已预热：'+j.loaded;
+   else if(j.loaded)w.textContent='未预热（已加载：'+j.loaded+'）';
+   else w.textContent='未预热';
+  }
+ }catch(e){clearTimeout(to);}
 }
 function showIgResult(blob,body){
  if(IG.url)URL.revokeObjectURL(IG.url);
@@ -2384,7 +2401,6 @@ async function generateImage(){
  IG.busy=true;
  IG.t0=Date.now();
  var btn=$('igGo');btn.disabled=true;
- if(IG.timer){clearInterval(IG.timer);IG.timer=null;}
  $('igProgBar').classList.remove('indet');
  $('igProgBar').style.width='2%';
  $('igProgWrap').style.display='flex';
@@ -2405,14 +2421,14 @@ async function generateImage(){
     showIgResult(blob,body);
     break;
    }
-   if(rr.status>=500){
+   if(rr.status!==200){
     var ee='';try{ee=(await rr.json()).error||'';}catch(x){}
-    throw new Error(ee||'生成失败');
+    throw new Error(ee||('生成失败 HTTP '+rr.status));
    }
    var st={};try{st=await rr.json();}catch(x){}
    var pct=st.pct||0;
    $('igProgBar').style.width=pct+'%';
-   var ph=(st.phase==='loading')?' · 加载模型中':'';
+   var ph=(st.phase==='loading')?' · 加载模型中':(pct>=97?' · 收尾中':'');
    $('igProgText').textContent=pct+'% · 已等待 '+Math.round((Date.now()-IG.t0)/1000)+' 秒'+ph;
   }
  }catch(e){
