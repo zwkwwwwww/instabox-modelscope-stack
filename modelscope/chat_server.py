@@ -25,7 +25,7 @@ MODELS = {
     "minicpm4.1-8b": {"path": "/mnt/workspace/gguf/minicpm41/MiniCPM4.1-8B-Q4_K_M.gguf",
                       "label": "MiniCPM4.1-8B · 约6-9 tok/s · 高效",
                       "think_levels": ["off", "high"],
-                      "think_note": "关/开（硬开关）"},
+                      "think_note": "关/开（关走模板硬关闭）"},
 }
 
 DEFAULT_THINK_LEVELS = ("off", "high")
@@ -42,6 +42,27 @@ def normalize_think(name, level):
     if "high" in levels:
         return "high"
     return levels[-1] if levels else "high"
+
+HARD_OFF_MODELS = {"minicpm4.1-8b"}
+
+
+def _hard_off_prompt(llm, msgs):
+    try:
+        tpl = (getattr(llm, "metadata", {}) or {}).get("tokenizer.chat_template")
+        if isinstance(tpl, bytes):
+            tpl = tpl.decode("utf-8", "replace")
+        if not tpl:
+            return None
+        clean = list(msgs)
+        if clean and clean[0].get("role") == "system" and str(clean[0].get("content") or "").strip() == "/no_think":
+            clean = clean[1:]
+        from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+        fmt = Jinja2ChatFormatter(tpl, "<|im_end|>", "<|im_start|>", True)
+        r = fmt(messages=clean, enable_thinking=False)
+        return getattr(r, "prompt", None) or getattr(r, "text", None)
+    except Exception:
+        return None
+
 
 IMG_MODELS = {
     "sdxl-turbo": {"path": "/mnt/workspace/img/sdxl-turbo", "label": "SDXL-Turbo · 4步 · 高质量", "steps": 4, "guidance": 0.0},
@@ -1283,8 +1304,19 @@ class H(BaseHTTPRequestHandler):
                 try:
                     with gen_lock:
                         llm = state["llm"]
-                        for chunk in llm.create_chat_completion(messages=msgs, max_tokens=mt, stream=True):
-                            delta = chunk["choices"][0]["delta"].get("content") or ""
+                        hard_prompt = _hard_off_prompt(llm, msgs) if (tlev == "off" and name in HARD_OFF_MODELS) else None
+                        if hard_prompt:
+                            gen = llm.create_completion(prompt=hard_prompt, max_tokens=mt, stream=True,
+                                                        stop=["<|im_end|>", "<|eot_id|>"])
+                            text_mode = True
+                        else:
+                            gen = llm.create_chat_completion(messages=msgs, max_tokens=mt, stream=True)
+                            text_mode = False
+                        for chunk in gen:
+                            if text_mode:
+                                delta = chunk["choices"][0].get("text") or ""
+                            else:
+                                delta = chunk["choices"][0]["delta"].get("content") or ""
                             if delta:
                                 payload = {"id": cid, "object": "chat.completion.chunk", "created": created, "model": name,
                                            "choices": [{"index": 0, "delta": {"content": delta}, "finish_reason": None}]}
@@ -1312,17 +1344,26 @@ class H(BaseHTTPRequestHandler):
                 q_state["waiting"] += 1
             try:
                 with gen_lock:
-                    res = state["llm"].create_chat_completion(messages=msgs, max_tokens=mt, stream=False)
+                    llm = state["llm"]
+                    hard_prompt = _hard_off_prompt(llm, msgs) if (tlev == "off" and name in HARD_OFF_MODELS) else None
+                    if hard_prompt:
+                        res = llm.create_completion(prompt=hard_prompt, max_tokens=mt, stream=False,
+                                                    stop=["<|im_end|>", "<|eot_id|>"])
+                        content = res["choices"][0].get("text") or ""
+                        usage = res.get("usage", {})
+                    else:
+                        res = llm.create_chat_completion(messages=msgs, max_tokens=mt, stream=False)
+                        content = res["choices"][0]["message"].get("content") or ""
+                        usage = res.get("usage", {})
             except Exception as e:
                 return self.send_json(500, {"error": {"message": repr(e)[:300], "type": "server_error"}})
             finally:
                 with q_lock:
                     q_state["waiting"] -= 1
-            content = res["choices"][0]["message"].get("content") or ""
             return self.send_json(200, {
                 "id": cid, "object": "chat.completion", "created": created, "model": name,
                 "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
-                "usage": res.get("usage", {})})
+                "usage": usage})
         if self.path.startswith("/api/load"):
             name = d.get("model")
             if name not in MODELS:
@@ -1394,10 +1435,19 @@ class H(BaseHTTPRequestHandler):
             try:
                 with gen_lock:
                     llm = state["llm"]
-                    for chunk in llm.create_chat_completion(
-                            messages=msgs,
-                            max_tokens=mt, stream=True):
-                        delta = chunk["choices"][0]["delta"].get("content") or ""
+                    hard_prompt = _hard_off_prompt(llm, msgs) if (tlev == "off" and name in HARD_OFF_MODELS) else None
+                    if hard_prompt:
+                        gen = llm.create_completion(prompt=hard_prompt, max_tokens=mt, stream=True,
+                                                    stop=["<|im_end|>", "<|eot_id|>"])
+                        text_mode = True
+                    else:
+                        gen = llm.create_chat_completion(messages=msgs, max_tokens=mt, stream=True)
+                        text_mode = False
+                    for chunk in gen:
+                        if text_mode:
+                            delta = chunk["choices"][0].get("text") or ""
+                        else:
+                            delta = chunk["choices"][0]["delta"].get("content") or ""
                         if delta:
                             self.wfile.write(("data: " + json.dumps({"delta": delta},
                                             ensure_ascii=False) + "\n\n").encode("utf-8"))
